@@ -1,79 +1,95 @@
-function ccStartInPage(intervalMs) {
-  try {
-    const ms = Math.max(10, Number(intervalMs) || 50);
+// background.js
+// Handles Cookie Clicker integration by executing code in the page's main world.
 
-    if (window.__ac_cc_timer) {
-      clearInterval(window.__ac_cc_timer);
-      window.__ac_cc_timer = null;
-    }
-
-    window.__ac_cc_timer = setInterval(() => {
-      try {
-        if (window.Game && typeof window.Game.ClickCookie === 'function') {
-          window.Game.ClickCookie();
-          return;
-        }
-        const el = document.getElementById('bigCookie');
-        if (el) el.click();
-      } catch (e) {}
-    }, ms);
-  } catch (e) {}
-}
-
-function ccStopInPage() {
-  try {
-    if (window.__ac_cc_timer) {
-      clearInterval(window.__ac_cc_timer);
-      window.__ac_cc_timer = null;
-    }
-  } catch (e) {}
-}
-
-async function execInMainWorld(tabId, func, args) {
+async function executeInMainWorld(tabId, func, args = []) {
   await chrome.scripting.executeScript({
     target: { tabId },
-    world: 'MAIN',
+    world: "MAIN",
     func,
     args
   });
 }
 
-chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
+// These functions run in the page context (MAIN world)
+function startCookieClicker(intervalMs) {
+  try {
+    const ms = Math.max(10, Number(intervalMs) || 50);
+
+    if (window.__ac_cookieTimer) {
+      clearInterval(window.__ac_cookieTimer);
+      window.__ac_cookieTimer = null;
+    }
+
+    window.__ac_cookieTimer = setInterval(() => {
+      try {
+        if (window.Game && typeof window.Game.ClickCookie === "function") {
+          window.Game.ClickCookie();
+          return;
+        }
+        const bigCookie = document.getElementById("bigCookie");
+        if (bigCookie) bigCookie.click();
+      } catch (e) {
+        // ignore
+      }
+    }, ms);
+  } catch (e) {
+    // ignore
+  }
+}
+
+function stopCookieClicker() {
+  try {
+    if (window.__ac_cookieTimer) {
+      clearInterval(window.__ac_cookieTimer);
+      window.__ac_cookieTimer = null;
+    }
+  } catch (e) {
+    // ignore
+  }
+}
+
+function setCookieInterval(intervalMs) {
+  // Simply restart with a new interval
+  startCookieClicker(intervalMs);
+}
+
+chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   (async () => {
     try {
-      if (!msg || !sender?.tab?.id) {
-        sendResponse({ ok: false, error: 'No tab' });
+      if (!sender.tab || typeof sender.tab.id !== "number") {
+        sendResponse({ ok: false, error: "No active tab" });
         return;
       }
 
       const tabId = sender.tab.id;
 
-      if (msg.type === 'CCSTART') {
-        await execInMainWorld(tabId, ccStartInPage, [msg.intervalMs]);
+      if (message.type === "cookie:start") {
+        await executeInMainWorld(tabId, startCookieClicker, [message.intervalMs]);
         sendResponse({ ok: true });
         return;
       }
 
-      if (msg.type === 'CCSTOP') {
-        await execInMainWorld(tabId, ccStopInPage, []);
+      if (message.type === "cookie:stop") {
+        await executeInMainWorld(tabId, stopCookieClicker);
         sendResponse({ ok: true });
         return;
       }
 
-      if (msg.type === 'CCSETINTERVAL') {
-        await execInMainWorld(tabId, ccStartInPage, [msg.intervalMs]);
+      if (message.type === "cookie:setInterval") {
+        await executeInMainWorld(tabId, setCookieInterval, [message.intervalMs]);
         sendResponse({ ok: true });
         return;
       }
 
-      sendResponse({ ok: false, error: 'Unknown message' });
-    } catch (e) {
+      sendResponse({ ok: false, error: "Unknown message type" });
+    } catch (err) {
       sendResponse({
         ok: false,
-        error: String(e && e.message ? e.message : e)
+        error: err && err.message ? err.message : String(err)
       });
     }
   })();
 
+  // Keep the message channel open for async response
   return true;
 });
