@@ -1,25 +1,29 @@
 // content.js
 (() => {
-  // ----- State -----
+  if (window.__AUTO_CLICKER_V2_APP__) {
+    return;
+  }
+  window.__AUTO_CLICKER_V2_APP__ = true;
+
   const state = {
     isRunning: false,
-    mode: "single",         // "single" | "multi"
+    mode: "single",
     intervalMs: 200,
     jitterEnabled: false,
     jitterRadius: 0,
     maxClicksEnabled: false,
-    maxClicks: 0,
+    maxClicks: 1000,
     clickCount: 0,
 
     single: {
-      clickSource: "cursor", // "cursor" | "fixed"
+      clickSource: "cursor",
       fixedX: 0,
       fixedY: 0,
       positionLocked: false
     },
 
     multi: {
-      targets: [],           // { x, y, intervalMs }
+      targets: [],
       index: 0,
       timeoutId: null
     },
@@ -29,42 +33,65 @@
       stopKey: "e"
     },
 
-    ui: {
-      panel: null,
-      statusText: null,
-      countDisplay: null,
-      intervalInput: null,
-      startBtn: null,
-      stopBtn: null,
-      modeTabs: null,
-      targetIndicator: null,
-      multiList: null,
-      removeAllBtn: null,
-      multiDefaultIntervalInput: null
-    },
-
     mouse: {
       x: window.innerWidth / 2,
       y: window.innerHeight / 2
     },
 
     cookie: {
-      active: false,
       isCookiePage: false,
+      active: false,
       fixedOnBigCookie: false
     },
 
-    panelActive: false,
-    mainTimerId: null
+    ui: {
+      panel: null,
+      statusText: null,
+      statusSub: null,
+      countValue: null,
+      themeToggle: null,
+      targetMode: null,
+      targetCoords: null,
+      intervalInput: null,
+      maxEnabled: null,
+      maxClicksInput: null,
+      jitterEnabled: null,
+      jitterRadiusInput: null,
+      multiDefaultIntervalInput: null,
+      multiList: null,
+      singleView: null,
+      multiView: null,
+      startKeyDisplay: null,
+      stopKeyDisplay: null,
+      targetIndicator: null
+    },
+
+    picker: {
+      overlay: null,
+      hint: null,
+      onPick: null,
+      onMove: null,
+      onKeyDown: null
+    },
+
+    mainTimerId: null,
+    panelActive: false
   };
 
-  // ----- Mouse tracking -----
-  document.addEventListener("mousemove", e => {
-    state.mouse.x = e.clientX;
-    state.mouse.y = e.clientY;
-  });
+  document.addEventListener("mousemove", (event) => {
+    state.mouse.x = event.clientX;
+    state.mouse.y = event.clientY;
 
-  // ----- Helpers -----
+    if (state.picker.overlay) {
+      state.picker.overlay.style.setProperty("--mx", `${event.clientX}px`);
+      state.picker.overlay.style.setProperty("--my", `${event.clientY}px`);
+      if (state.picker.hint) {
+        state.picker.hint.style.left = `${event.clientX}px`;
+        state.picker.hint.style.top = `${event.clientY}px`;
+      }
+    }
+  }, true);
+
   function isCookieClickerPage() {
     return (
       location.hostname === "orteil.dashnet.org" &&
@@ -74,73 +101,97 @@
 
   state.cookie.isCookiePage = isCookieClickerPage();
 
-  function setStatus(message, color) {
-    if (!state.ui.statusText) return;
-    state.ui.statusText.textContent = message;
-    if (color) {
-      state.ui.statusText.style.color = color;
+  function normalizeTheme(theme) {
+    if (theme === "light" || theme === "dark") return theme;
+    if (theme === "blue") return "dark";
+    if (theme === "green") return "light";
+    return "dark";
+  }
+
+  function syncSet(data) {
+    chrome.storage?.sync?.set?.(data);
+  }
+
+  function setStatus(text, tone = "accent", subtext = "") {
+    if (state.ui.statusText) {
+      state.ui.statusText.textContent = text;
+      state.ui.statusText.dataset.tone = tone;
+    }
+    if (state.ui.statusSub) {
+      state.ui.statusSub.textContent = subtext;
+    }
+  }
+
+  function updateCountUI() {
+    if (state.ui.countValue) {
+      state.ui.countValue.textContent = String(state.clickCount);
+    }
+  }
+
+  function updateTargetUI() {
+    if (!state.ui.targetMode || !state.ui.targetCoords) return;
+
+    if (state.single.positionLocked) {
+      state.ui.targetMode.textContent = "Fixed target ready";
+      state.ui.targetCoords.textContent =
+        `${Math.round(state.single.fixedX)}, ${Math.round(state.single.fixedY)}`;
     } else {
-      state.ui.statusText.style.color = "var(--ac-accent)";
+      state.ui.targetMode.textContent = "Cursor follows live mouse";
+      state.ui.targetCoords.textContent = "No fixed target selected";
     }
   }
 
-  function sendCookieMessage(payload, onOk) {
-    try {
-      chrome.runtime.sendMessage(payload, response => {
-        const err = chrome.runtime.lastError;
-        if (err || !response || !response.ok) {
-          setStatus("Cookie mode blocked – enable site access", "#f97316");
-          return;
-        }
-        if (typeof onOk === "function") onOk();
-      });
-    } catch (e) {
-      setStatus("Cookie mode blocked – enable site access", "#f97316");
+  function updateModeButtons() {
+    const tabs = state.ui.panel?.querySelectorAll?.("[data-ac-mode]");
+    tabs?.forEach((button) => {
+      button.classList.toggle("active", button.dataset.acMode === state.mode);
+    });
+
+    if (state.ui.singleView) {
+      state.ui.singleView.classList.toggle("active", state.mode === "single");
+    }
+    if (state.ui.multiView) {
+      state.ui.multiView.classList.toggle("active", state.mode === "multi");
     }
   }
 
-  function startCookieMode(intervalMs) {
-    if (!state.cookie.isCookiePage) return;
-    sendCookieMessage(
-      { type: "cookie:start", intervalMs },
-      () => {
-        state.cookie.active = true;
-      }
-    );
+  function updateActionButtons() {
+    if (!state.ui.panel) return;
+
+    const startCursor = document.getElementById("ac-start-cursor");
+    const startFixed = document.getElementById("ac-start-fixed");
+    const stopSingle = document.getElementById("ac-stop-single");
+    const startMulti = document.getElementById("ac-start-multi");
+    const stopMulti = document.getElementById("ac-stop-multi");
+    const clearFixed = document.getElementById("ac-clear-fixed");
+
+    if (startCursor) startCursor.disabled = state.isRunning;
+    if (startFixed) startFixed.disabled = state.isRunning || !state.single.positionLocked;
+    if (stopSingle) stopSingle.disabled = !state.isRunning || state.mode !== "single";
+    if (startMulti) startMulti.disabled = state.isRunning || state.multi.targets.length === 0;
+    if (stopMulti) stopMulti.disabled = !state.isRunning || state.mode !== "multi";
+    if (clearFixed) clearFixed.disabled = state.isRunning || !state.single.positionLocked;
   }
 
-  function stopCookieMode() {
-    if (!state.cookie.isCookiePage) return;
-    sendCookieMessage(
-      { type: "cookie:stop" },
-      () => {
-        state.cookie.active = false;
-      }
-    );
+  function applyTheme(theme) {
+    if (!state.ui.panel) return;
+    state.ui.panel.dataset.theme = normalizeTheme(theme);
   }
 
-  function updateCookieInterval(intervalMs) {
-    if (!state.cookie.isCookiePage || !state.cookie.active) return;
-    sendCookieMessage(
-      { type: "cookie:setInterval", intervalMs },
-      () => {}
-    );
-  }
-
-  // ----- Target indicator (single) -----
   function ensureTargetIndicator() {
     if (state.ui.targetIndicator) return;
-    const el = document.createElement("div");
-    el.id = "ac-target-indicator";
-    document.body.appendChild(el);
-    state.ui.targetIndicator = el;
+
+    const indicator = document.createElement("div");
+    indicator.id = "ac-target-indicator";
+    document.body.appendChild(indicator);
+    state.ui.targetIndicator = indicator;
   }
 
   function showTargetIndicator(x, y) {
     ensureTargetIndicator();
     state.ui.targetIndicator.style.display = "block";
     state.ui.targetIndicator.style.left = `${x}px`;
-    state.ui.targetIndicator.style.top  = `${y}px`;
+    state.ui.targetIndicator.style.top = `${y}px`;
   }
 
   function hideTargetIndicator() {
@@ -148,41 +199,105 @@
     state.ui.targetIndicator.style.display = "none";
   }
 
-  // ----- Detect element at point -----
-  function getClickableElementAt(x, y) {
-    const els = document.elementsFromPoint(x, y);
-    if (!els || !els.length) return null;
+  function temporarilyHideFloatingUi(callback) {
+    const panel = state.ui.panel;
+    const indicator = state.ui.targetIndicator;
+    const prevPanelDisplay = panel?.style.display;
+    const prevIndicatorDisplay = indicator?.style.display;
 
-    // Pass 1: obvious clickable elements
-    for (const el of els) {
-      if (!el) continue;
-      if (el.id === "ac-panel" || el.closest?.("#ac-panel")) continue;
-      if (el.id === "ac-target-indicator") continue;
-      const tag = el.tagName;
-      if (["BUTTON", "A"].includes(tag)) return el;
-      if (tag === "INPUT") {
-        const type = el.type && el.type.toLowerCase();
-        if (["button", "submit", "checkbox", "radio"].includes(type)) {
-          return el;
-        }
-      }
-      if (typeof el.onclick === "function") return el;
-      if (el.getAttribute?.("role") === "button") return el;
+    if (panel) panel.style.display = "none";
+    if (indicator) indicator.style.display = "none";
+
+    try {
+      return callback();
+    } finally {
+      if (panel) panel.style.display = prevPanelDisplay || "block";
+      if (indicator) indicator.style.display = prevIndicatorDisplay || "none";
     }
-
-    // Pass 2: any element (fallback)
-    for (const el of els) {
-      if (!el) continue;
-      if (el.id === "ac-panel" || el.closest?.("#ac-panel")) continue;
-      if (el.id === "ac-target-indicator") continue;
-      return el;
-    }
-
-    return null;
   }
 
-  function dispatchSyntheticClick(el, x, y) {
-    if (!el) return;
+  function checkBigCookieAt(x, y) {
+    if (!state.cookie.isCookiePage) return false;
+
+    return temporarilyHideFloatingUi(() => {
+      const elements = document.elementsFromPoint(x, y);
+      return elements.some((element) => element?.id === "bigCookie");
+    });
+  }
+
+  function sendCookieMessage(payload, onOk) {
+    try {
+      chrome.runtime.sendMessage(payload, (response) => {
+        const err = chrome.runtime.lastError;
+        if (err || !response?.ok) {
+          setStatus(
+            "Cookie mode unavailable",
+            "warning",
+            "Enable site access for the extension on Cookie Clicker."
+          );
+          return;
+        }
+        if (typeof onOk === "function") onOk();
+      });
+    } catch {
+      setStatus(
+        "Cookie mode unavailable",
+        "warning",
+        "Enable site access for the extension on Cookie Clicker."
+      );
+    }
+  }
+
+  function startCookieMode(intervalMs) {
+    if (!state.cookie.isCookiePage) return;
+    sendCookieMessage({ type: "cookie:start", intervalMs }, () => {
+      state.cookie.active = true;
+    });
+  }
+
+  function stopCookieMode() {
+    if (!state.cookie.isCookiePage || !state.cookie.active) return;
+    sendCookieMessage({ type: "cookie:stop" }, () => {
+      state.cookie.active = false;
+    });
+  }
+
+  function updateCookieInterval(intervalMs) {
+    if (!state.cookie.isCookiePage || !state.cookie.active) return;
+    sendCookieMessage({ type: "cookie:setInterval", intervalMs }, () => {});
+  }
+
+  function getClickableElementAt(x, y) {
+    return temporarilyHideFloatingUi(() => {
+      const elements = document.elementsFromPoint(x, y);
+      if (!elements?.length) return null;
+
+      for (const el of elements) {
+        if (!el) continue;
+        if (el.id === "ac-target-indicator") continue;
+
+        const tag = el.tagName;
+        if (tag === "BUTTON" || tag === "A") return el;
+
+        if (tag === "INPUT") {
+          const type = String(el.type || "").toLowerCase();
+          if (["button", "submit", "checkbox", "radio"].includes(type)) return el;
+        }
+
+        if (typeof el.onclick === "function") return el;
+        if (el.getAttribute?.("role") === "button") return el;
+      }
+
+      for (const el of elements) {
+        if (el) return el;
+      }
+
+      return null;
+    });
+  }
+
+  function dispatchSyntheticClick(element, x, y) {
+    if (!element) return false;
 
     const baseProps = {
       bubbles: true,
@@ -195,182 +310,39 @@
     };
 
     try {
-      el.dispatchEvent(new PointerEvent("pointerdown", {
+      element.dispatchEvent(new PointerEvent("pointerdown", {
         ...baseProps,
         pointerId: 1,
-        isPrimary: true,
-        pointerType: "mouse"
+        pointerType: "mouse",
+        isPrimary: true
       }));
-      el.dispatchEvent(new MouseEvent("mousedown", baseProps));
-      el.dispatchEvent(new PointerEvent("pointerup", {
+      element.dispatchEvent(new MouseEvent("mousedown", baseProps));
+      element.dispatchEvent(new PointerEvent("pointerup", {
         ...baseProps,
         pointerId: 1,
-        isPrimary: true,
-        pointerType: "mouse"
+        pointerType: "mouse",
+        isPrimary: true
       }));
-      el.dispatchEvent(new MouseEvent("mouseup", baseProps));
-      el.dispatchEvent(new MouseEvent("click", baseProps));
-    } catch (err) {
+      element.dispatchEvent(new MouseEvent("mouseup", baseProps));
+      element.dispatchEvent(new MouseEvent("click", baseProps));
+      return true;
+    } catch {
       try {
-        el.click();
-      } catch (err2) {
-        // ignore
+        element.click();
+        return true;
+      } catch {
+        return false;
       }
     }
   }
 
-  // ----- Lock / unlock single fixed position -----
-  function checkBigCookieAt(x, y) {
-    if (!state.cookie.isCookiePage) return false;
-    const prevPanelDisplay = state.ui.panel?.style.display;
-    const prevIndicator = state.ui.targetIndicator?.style.display;
-    if (state.ui.panel) state.ui.panel.style.display = "none";
-    if (state.ui.targetIndicator) state.ui.targetIndicator.style.display = "none";
-
-    const els = document.elementsFromPoint(x, y);
-    let found = false;
-    for (const el of els) {
-      if (el && el.id === "bigCookie") {
-        found = true;
-        break;
-      }
-    }
-
-    if (state.ui.panel) state.ui.panel.style.display = prevPanelDisplay || "block";
-    if (state.ui.targetIndicator) state.ui.targetIndicator.style.display = prevIndicator || "block";
-
-    return found;
-  }
-
-  function lockSinglePosition(x, y) {
-    state.single.fixedX = x;
-    state.single.fixedY = y;
-    state.single.positionLocked = true;
-    state.cookie.fixedOnBigCookie = checkBigCookieAt(x, y);
-    showTargetIndicator(x, y);
-    const label = document.getElementById("ac-position-mode-label");
-    if (label) label.textContent = "Fixed";
-    const startPosBtn = document.getElementById("ac-position-start");
-    if (startPosBtn) startPosBtn.disabled = false;
-    const resetBtn = document.getElementById("ac-position-reset");
-    if (resetBtn) resetBtn.disabled = false;
-  }
-
-  function unlockSinglePosition() {
-    state.single.positionLocked = false;
-    state.cookie.fixedOnBigCookie = false;
-    hideTargetIndicator();
-    const label = document.getElementById("ac-position-mode-label");
-    if (label) label.textContent = "Cursor";
-    const startPosBtn = document.getElementById("ac-position-start");
-    if (startPosBtn) {
-      startPosBtn.disabled = true;
-      startPosBtn.classList.remove("ac-pos-btn-active");
-      startPosBtn.textContent = "Start fixed position";
-    }
-    const resetBtn = document.getElementById("ac-position-reset");
-    if (resetBtn) resetBtn.disabled = true;
-    if (state.isRunning && state.single.clickSource === "fixed") {
-      stopClicking();
-    }
-  }
-
-  // ----- Multi targets -----
-  function renderMultiTargets() {
-    const list = state.ui.multiList;
-    if (!list) return;
-
-    list.innerHTML = "";
-    if (!state.multi.targets.length) {
-      const empty = document.createElement("div");
-      empty.className = "ac-multi-empty";
-      empty.textContent = "No targets yet. Click “Add target” and then click anywhere on the page.";
-      list.appendChild(empty);
-      if (state.ui.removeAllBtn) {
-        state.ui.removeAllBtn.style.display = "none";
-      }
-      if (state.ui.startBtn && state.mode === "multi") {
-        state.ui.startBtn.disabled = true;
-      }
-      return;
-    }
-
-    state.multi.targets.forEach((t, i) => {
-      const row = document.createElement("div");
-      row.className = "ac-multi-row";
-
-      const index = document.createElement("span");
-      index.className = "ac-multi-index";
-      index.textContent = String(i + 1);
-
-      const coords = document.createElement("span");
-      coords.className = "ac-multi-coords";
-      coords.textContent = `${Math.round(t.x)}, ${Math.round(t.y)}`;
-
-      const input = document.createElement("input");
-      input.type = "number";
-      input.min = "50";
-      input.value = String(t.intervalMs);
-      input.className = "ac-multi-interval-input";
-      input.addEventListener("change", () => {
-        const val = parseInt(input.value, 10);
-        t.intervalMs = Math.max(50, isNaN(val) ? state.intervalMs : val);
-      });
-
-      const suffix = document.createElement("span");
-      suffix.className = "ac-multi-ms";
-      suffix.textContent = "ms";
-
-      const removeBtn = document.createElement("button");
-      removeBtn.className = "ac-multi-remove";
-      removeBtn.type = "button";
-      removeBtn.textContent = "×";
-      removeBtn.title = "Remove target";
-      removeBtn.addEventListener("click", () => {
-        removeMultiTarget(i);
-      });
-
-      row.appendChild(index);
-      row.appendChild(coords);
-      row.appendChild(input);
-      row.appendChild(suffix);
-      row.appendChild(removeBtn);
-      list.appendChild(row);
-    });
-
-    if (state.ui.removeAllBtn) {
-      state.ui.removeAllBtn.style.display = "flex";
-    }
-    if (state.ui.startBtn && state.mode === "multi") {
-      state.ui.startBtn.disabled = state.multi.targets.length === 0;
-    }
-  }
-
-  function addMultiTarget(x, y, intervalMs) {
-    state.multi.targets.push({
-      x,
-      y,
-      intervalMs: intervalMs || state.intervalMs
-    });
-    renderMultiTargets();
-  }
-
-  function clearMultiTargets() {
-    state.multi.targets = [];
-    renderMultiTargets();
-  }
-
-  function removeMultiTarget(index) {
-    state.multi.targets.splice(index, 1);
-    renderMultiTargets();
-  }
-
-  // ----- Click engine -----
   function applyJitter(x, y) {
-    if (!state.jitterEnabled || state.jitterRadius <= 0) return { x, y };
-    const r = state.jitterRadius;
-    const dx = (Math.random() * 2 - 1) * r;
-    const dy = (Math.random() * 2 - 1) * r;
+    if (!state.jitterEnabled || state.jitterRadius <= 0) {
+      return { x, y };
+    }
+
+    const dx = (Math.random() * 2 - 1) * state.jitterRadius;
+    const dy = (Math.random() * 2 - 1) * state.jitterRadius;
     return { x: x + dx, y: y + dy };
   }
 
@@ -381,23 +353,190 @@
 
   function incrementClickCount() {
     state.clickCount += 1;
-    if (state.ui.countDisplay) {
-      state.ui.countDisplay.textContent = String(state.clickCount);
+    updateCountUI();
+  }
+
+  function clickAtPoint(x, y) {
+    const target = getClickableElementAt(x, y);
+    if (!target) return false;
+
+    const clicked = dispatchSyntheticClick(target, x, y);
+    if (!clicked) return false;
+
+    incrementClickCount();
+
+    if (!canContinueClicking()) {
+      stopClicking();
     }
+
+    return true;
+  }
+
+  function lockFixedPosition(x, y) {
+    state.single.fixedX = x;
+    state.single.fixedY = y;
+    state.single.positionLocked = true;
+    state.single.clickSource = "fixed";
+    state.cookie.fixedOnBigCookie = checkBigCookieAt(x, y);
+
+    showTargetIndicator(x, y);
+    updateTargetUI();
+    updateActionButtons();
+
+    setStatus(
+      "Fixed target armed",
+      "accent",
+      state.cookie.fixedOnBigCookie
+        ? "Detected Cookie Clicker big cookie fast mode."
+        : "Ready to click a saved page position."
+    );
+  }
+
+  function clearFixedPosition() {
+    state.single.positionLocked = false;
+    state.single.fixedX = 0;
+    state.single.fixedY = 0;
+    state.single.clickSource = "cursor";
+    state.cookie.fixedOnBigCookie = false;
+
+    hideTargetIndicator();
+    updateTargetUI();
+    updateActionButtons();
+
+    if (!state.isRunning) {
+      setStatus("Ready", "accent", "Pick a fixed target or start cursor mode.");
+    }
+  }
+
+  function renderMultiTargets() {
+    const list = state.ui.multiList;
+    if (!list) return;
+
+    list.innerHTML = "";
+
+    if (!state.multi.targets.length) {
+      const empty = document.createElement("div");
+      empty.className = "ac-empty";
+      empty.textContent = "No targets yet. Click Add Target and choose points on the page.";
+      list.appendChild(empty);
+      updateActionButtons();
+      return;
+    }
+
+    state.multi.targets.forEach((target, index) => {
+      const row = document.createElement("div");
+      row.className = "ac-target-row";
+
+      const badge = document.createElement("div");
+      badge.className = "ac-target-index";
+      badge.textContent = String(index + 1);
+
+      const meta = document.createElement("div");
+      meta.className = "ac-target-meta";
+
+      const pos = document.createElement("div");
+      pos.className = "ac-target-pos";
+      pos.textContent = `${Math.round(target.x)}, ${Math.round(target.y)}`;
+
+      const note = document.createElement("div");
+      note.className = "ac-target-note";
+      note.textContent = "Per-target interval";
+
+      meta.appendChild(pos);
+      meta.appendChild(note);
+
+      const intervalInput = document.createElement("input");
+      intervalInput.className = "ac-list-input";
+      intervalInput.type = "number";
+      intervalInput.min = "50";
+      intervalInput.value = String(target.intervalMs);
+      intervalInput.addEventListener("change", () => {
+        const value = parseInt(intervalInput.value, 10);
+        target.intervalMs = Math.max(50, Number.isNaN(value) ? state.intervalMs : value);
+      });
+
+      const unit = document.createElement("span");
+      unit.className = "ac-unit";
+      unit.textContent = "ms";
+
+      const removeBtn = document.createElement("button");
+      removeBtn.className = "ac-remove-btn";
+      removeBtn.type = "button";
+      removeBtn.textContent = "×";
+      removeBtn.title = "Remove target";
+      removeBtn.addEventListener("click", () => {
+        state.multi.targets.splice(index, 1);
+        renderMultiTargets();
+      });
+
+      row.appendChild(badge);
+      row.appendChild(meta);
+      row.appendChild(intervalInput);
+      row.appendChild(unit);
+      row.appendChild(removeBtn);
+
+      list.appendChild(row);
+    });
+
+    updateActionButtons();
+  }
+
+  function addMultiTarget(x, y, intervalMs) {
+    state.multi.targets.push({
+      x,
+      y,
+      intervalMs: Math.max(50, intervalMs || state.intervalMs)
+    });
+    renderMultiTargets();
+    setStatus("Target added", "accent", "Multi sequence can start immediately.");
+  }
+
+  function clearMultiTargets() {
+    state.multi.targets = [];
+    state.multi.index = 0;
+    renderMultiTargets();
+    setStatus("Targets cleared", "warning", "Add new targets to run multi mode.");
+  }
+
+  function switchMode(mode) {
+    state.mode = mode === "multi" ? "multi" : "single";
+    updateModeButtons();
+    updateActionButtons();
+    syncSet({ ac_mode: state.mode });
+
+    if (!state.isRunning) {
+      setStatus(
+        state.mode === "single" ? "Ready" : "Multi mode ready",
+        "accent",
+        state.mode === "single"
+          ? "Pick a fixed target or start cursor mode."
+          : "Create a sequence of saved click points."
+      );
+    }
+  }
+
+  function restartSingleLoopIfNeeded() {
+    if (!state.isRunning || state.mode !== "single") return;
+
+    if (state.cookie.active) {
+      updateCookieInterval(state.intervalMs);
+      return;
+    }
+
+    clearInterval(state.mainTimerId);
+    state.mainTimerId = setInterval(runSingleTick, state.intervalMs);
   }
 
   function runSingleTick() {
     if (!state.isRunning) return;
 
-    // Cookie Clicker fast mode for bigCookie when fixed
-    const canUseCookieMode =
+    const canUseCookieFastMode =
       state.cookie.isCookiePage &&
-      state.single.positionLocked &&
       state.single.clickSource === "fixed" &&
+      state.single.positionLocked &&
       state.cookie.fixedOnBigCookie;
 
-    if (canUseCookieMode) {
-      // Counting is handled by us; actual click is done in main world
+    if (canUseCookieFastMode) {
       if (!state.cookie.active) {
         startCookieMode(state.intervalMs);
       }
@@ -413,631 +552,680 @@
       stopCookieMode();
     }
 
-    let x = state.single.clickSource === "fixed"
-      ? state.single.fixedX
-      : state.mouse.x;
-    let y = state.single.clickSource === "fixed"
-      ? state.single.fixedY
-      : state.mouse.y;
+    let x = state.single.clickSource === "fixed" ? state.single.fixedX : state.mouse.x;
+    let y = state.single.clickSource === "fixed" ? state.single.fixedY : state.mouse.y;
 
     if (state.single.clickSource === "fixed" && !state.single.positionLocked) {
-      // Fixed mode disabled while not locked
+      stopClicking();
+      setStatus("No fixed target", "warning", "Pick a saved position first.");
       return;
     }
 
     const jittered = applyJitter(x, y);
-    x = jittered.x;
-    y = jittered.y;
-
-    const target = getClickableElementAt(x, y);
-    if (target) {
-      dispatchSyntheticClick(target, x, y);
-      incrementClickCount();
-      if (!canContinueClicking()) {
-        stopClicking();
-      }
-    }
+    clickAtPoint(jittered.x, jittered.y);
   }
 
   function runMultiSequence() {
     if (!state.isRunning) return;
+
     if (!state.multi.targets.length) {
       stopClicking();
+      setStatus("No targets", "warning", "Add at least one target for multi mode.");
       return;
     }
 
     const current = state.multi.targets[state.multi.index];
     if (!current) {
       state.multi.index = 0;
-      runMultiSequence();
+      state.multi.timeoutId = setTimeout(runMultiSequence, 0);
       return;
     }
 
     const jittered = applyJitter(current.x, current.y);
-    const target = getClickableElementAt(jittered.x, jittered.y);
-    if (target) {
-      dispatchSyntheticClick(target, jittered.x, jittered.y);
-      incrementClickCount();
-      if (!canContinueClicking()) {
-        stopClicking();
-        return;
-      }
-    }
+    clickAtPoint(jittered.x, jittered.y);
+
+    if (!state.isRunning) return;
 
     state.multi.index = (state.multi.index + 1) % state.multi.targets.length;
-    state.multi.timeoutId = setTimeout(runMultiSequence, current.intervalMs);
+    state.multi.timeoutId = setTimeout(
+      runMultiSequence,
+      Math.max(50, current.intervalMs || state.intervalMs)
+    );
   }
 
-  function startClicking() {
+  function startClicking(mode = state.mode, source = "cursor") {
     if (state.isRunning) return;
 
-    // Safety: do not start multi if no targets
-    if (state.mode === "multi" && !state.multi.targets.length) {
-      setStatus("Add at least one target first", "#f97316");
+    if (mode === "single" && source === "fixed" && !state.single.positionLocked) {
+      setStatus("Pick a fixed target first", "warning", "Use Add Fixed Target before starting.");
       return;
     }
 
+    if (mode === "multi" && state.multi.targets.length === 0) {
+      setStatus("No targets added", "warning", "Create at least one target for multi mode.");
+      return;
+    }
+
+    state.mode = mode;
+    state.single.clickSource = source;
     state.isRunning = true;
     state.clickCount = 0;
-    if (state.ui.countDisplay) {
-      state.ui.countDisplay.textContent = "0";
-    }
-    if (state.ui.startBtn) state.ui.startBtn.disabled = true;
-    if (state.ui.stopBtn)  state.ui.stopBtn.disabled  = false;
+    updateCountUI();
+    updateModeButtons();
+    updateActionButtons();
 
-    if (state.mode === "single") {
+    if (mode === "single") {
       setStatus(
-        state.single.clickSource === "fixed" ? "Running (fixed position)" : "Running…",
-        "#22c55e"
+        source === "fixed" ? "Running fixed mode" : "Running cursor mode",
+        "success",
+        source === "fixed"
+          ? "Clicking the saved target position."
+          : "Clicking under the current mouse cursor."
       );
+      clearInterval(state.mainTimerId);
       state.mainTimerId = setInterval(runSingleTick, state.intervalMs);
-    } else {
-      setStatus("Running multi-target…", "#22c55e");
-      state.multi.index = 0;
-      runMultiSequence();
+      return;
     }
+
+    setStatus("Running multi sequence", "success", "Cycling through saved targets.");
+    state.multi.index = 0;
+    runMultiSequence();
   }
 
   function stopClicking() {
-    if (!state.isRunning) return;
+    if (!state.isRunning && !state.cookie.active) return;
+
     state.isRunning = false;
+
     clearInterval(state.mainTimerId);
     clearTimeout(state.multi.timeoutId);
     state.mainTimerId = null;
     state.multi.timeoutId = null;
 
-    if (state.ui.startBtn) state.ui.startBtn.disabled = false;
-    if (state.ui.stopBtn)  state.ui.stopBtn.disabled  = true;
-
     if (state.cookie.active) {
       stopCookieMode();
     }
 
-    setStatus("Stopped", "#ef4444");
+    updateActionButtons();
+    setStatus("Stopped", "danger", "Clicking has been paused.");
   }
 
-  // ----- Panel UI -----
-  function applyThemeToPanel(theme) {
-    if (!state.ui.panel) return;
-    state.ui.panel.dataset.theme = theme;
-  }
-
-  function loadSettingsAndInitTheme() {
-    if (!chrome.storage?.sync) {
-      applyThemeToPanel("blue");
-      return;
+  function closePicker() {
+    if (state.picker.overlay) {
+      state.picker.overlay.remove();
+      state.picker.overlay = null;
     }
+    if (state.picker.hint) {
+      state.picker.hint.remove();
+      state.picker.hint = null;
+    }
+    if (state.picker.onMove) {
+      document.removeEventListener("mousemove", state.picker.onMove, true);
+      state.picker.onMove = null;
+    }
+    if (state.picker.onKeyDown) {
+      document.removeEventListener("keydown", state.picker.onKeyDown, true);
+      state.picker.onKeyDown = null;
+    }
+    state.picker.onPick = null;
+  }
 
-    chrome.storage.sync.get(
+  function openPicker(label, onPick) {
+    closePicker();
+
+    const overlay = document.createElement("div");
+    overlay.id = "ac-picker-overlay";
+
+    const hint = document.createElement("div");
+    hint.id = "ac-picker-hint";
+    hint.textContent = label;
+
+    state.picker.overlay = overlay;
+    state.picker.hint = hint;
+    state.picker.onPick = onPick;
+
+    document.body.appendChild(overlay);
+    document.body.appendChild(hint);
+
+    const handleMove = (event) => {
+      overlay.style.setProperty("--mx", `${event.clientX}px`);
+      overlay.style.setProperty("--my", `${event.clientY}px`);
+      hint.style.left = `${event.clientX}px`;
+      hint.style.top = `${event.clientY}px`;
+    };
+
+    const handleKey = (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closePicker();
+        setStatus("Selection cancelled", "warning", "No position was saved.");
+      }
+    };
+
+    state.picker.onMove = handleMove;
+    state.picker.onKeyDown = handleKey;
+
+    document.addEventListener("mousemove", handleMove, true);
+    document.addEventListener("keydown", handleKey, true);
+
+    overlay.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const x = event.clientX;
+      const y = event.clientY;
+
+      closePicker();
+      onPick(x, y);
+    }, { once: true });
+  }
+
+  function editShortcut(which) {
+    const targetEl =
+      which === "start" ? state.ui.startKeyDisplay : state.ui.stopKeyDisplay;
+
+    if (!targetEl) return;
+
+    targetEl.textContent = "?";
+
+    const onKey = (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+
+      const key = String(event.key || "").toLowerCase();
+      if (!key || key.length !== 1) return;
+
+      if (which === "start") {
+        state.shortcuts.startKey = key;
+        syncSet({ ac_startKey: key });
+      } else {
+        state.shortcuts.stopKey = key;
+        syncSet({ ac_stopKey: key });
+      }
+
+      updateShortcutDisplays();
+      document.removeEventListener("keydown", onKey, true);
+      setStatus("Shortcut updated", "accent", `Ctrl + ${key.toUpperCase()} saved.`);
+    };
+
+    document.addEventListener("keydown", onKey, true);
+  }
+
+  function updateShortcutDisplays() {
+    if (state.ui.startKeyDisplay) {
+      state.ui.startKeyDisplay.textContent = state.shortcuts.startKey.toUpperCase();
+    }
+    if (state.ui.stopKeyDisplay) {
+      state.ui.stopKeyDisplay.textContent = state.shortcuts.stopKey.toUpperCase();
+    }
+  }
+
+  function enableDragging(panel, handle) {
+    let dragging = false;
+    let startX = 0;
+    let startY = 0;
+    let panelX = 0;
+    let panelY = 0;
+
+    const onMove = (event) => {
+      if (!dragging) return;
+
+      const nextX = panelX + (event.clientX - startX);
+      const nextY = panelY + (event.clientY - startY);
+
+      panel.style.left = `${nextX}px`;
+      panel.style.top = `${nextY}px`;
+      panel.style.right = "auto";
+      panel.style.bottom = "auto";
+    };
+
+    const onUp = () => {
+      dragging = false;
+      document.removeEventListener("mousemove", onMove);
+      document.removeEventListener("mouseup", onUp);
+    };
+
+    handle.addEventListener("mousedown", (event) => {
+      const target = event.target;
+      if (target.closest("button")) return;
+      if (target.closest("a")) return;
+      if (state.picker.overlay) return;
+
+      dragging = true;
+      startX = event.clientX;
+      startY = event.clientY;
+
+      const rect = panel.getBoundingClientRect();
+      panelX = rect.left;
+      panelY = rect.top;
+
+      document.addEventListener("mousemove", onMove);
+      document.addEventListener("mouseup", onUp);
+    });
+  }
+
+  function bindPanelEvents() {
+    const panel = state.ui.panel;
+
+    document.getElementById("ac-theme-toggle").addEventListener("click", () => {
+      const current = normalizeTheme(panel.dataset.theme);
+      const next = current === "dark" ? "light" : "dark";
+      applyTheme(next);
+      syncSet({ ac_theme: next });
+    });
+
+    document.getElementById("ac-close").addEventListener("click", () => {
+      stopClicking();
+      closePicker();
+      panel.style.display = "none";
+      state.panelActive = false;
+    });
+
+    panel.querySelectorAll("[data-ac-mode]").forEach((button) => {
+      button.addEventListener("click", () => {
+        if (state.isRunning) stopClicking();
+        switchMode(button.dataset.acMode);
+      });
+    });
+
+    document.getElementById("ac-pick-fixed").addEventListener("click", () => {
+      if (state.isRunning) return;
+      openPicker("Click anywhere to save fixed target", (x, y) => {
+        lockFixedPosition(x, y);
+      });
+    });
+
+    document.getElementById("ac-clear-fixed").addEventListener("click", () => {
+      if (state.isRunning) return;
+      clearFixedPosition();
+    });
+
+    document.getElementById("ac-start-cursor").addEventListener("click", () => {
+      startClicking("single", "cursor");
+    });
+
+    document.getElementById("ac-start-fixed").addEventListener("click", () => {
+      startClicking("single", "fixed");
+    });
+
+    document.getElementById("ac-stop-single").addEventListener("click", () => {
+      stopClicking();
+    });
+
+    document.getElementById("ac-multi-add").addEventListener("click", () => {
+      if (state.isRunning) return;
+      openPicker("Click page to add multi target", (x, y) => {
+        addMultiTarget(x, y, state.intervalMs);
+      });
+    });
+
+    document.getElementById("ac-multi-clear").addEventListener("click", () => {
+      if (state.isRunning) return;
+      clearMultiTargets();
+    });
+
+    document.getElementById("ac-start-multi").addEventListener("click", () => {
+      startClicking("multi");
+    });
+
+    document.getElementById("ac-stop-multi").addEventListener("click", () => {
+      stopClicking();
+    });
+
+    state.ui.intervalInput.addEventListener("change", () => {
+      const value = parseInt(state.ui.intervalInput.value, 10);
+      state.intervalMs = Math.max(10, Number.isNaN(value) ? 200 : value);
+      syncSet({ ac_intervalMs: state.intervalMs });
+      restartSingleLoopIfNeeded();
+    });
+
+    state.ui.multiDefaultIntervalInput.addEventListener("change", () => {
+      const value = parseInt(state.ui.multiDefaultIntervalInput.value, 10);
+      state.intervalMs = Math.max(50, Number.isNaN(value) ? 200 : value);
+      syncSet({ ac_intervalMs: state.intervalMs });
+    });
+
+    state.ui.maxEnabled.addEventListener("change", () => {
+      state.maxClicksEnabled = state.ui.maxEnabled.checked;
+    });
+
+    state.ui.maxClicksInput.addEventListener("change", () => {
+      const value = parseInt(state.ui.maxClicksInput.value, 10);
+      state.maxClicks = Math.max(1, Number.isNaN(value) ? 1000 : value);
+    });
+
+    state.ui.jitterEnabled.addEventListener("change", () => {
+      state.jitterEnabled = state.ui.jitterEnabled.checked;
+    });
+
+    state.ui.jitterRadiusInput.addEventListener("change", () => {
+      const value = parseInt(state.ui.jitterRadiusInput.value, 10);
+      state.jitterRadius = Math.max(0, Number.isNaN(value) ? 0 : value);
+    });
+
+    state.ui.startKeyDisplay.addEventListener("click", () => editShortcut("start"));
+    state.ui.stopKeyDisplay.addEventListener("click", () => editShortcut("stop"));
+
+    enableDragging(panel, document.getElementById("ac-header"));
+  }
+
+  function loadSettings() {
+    chrome.storage?.sync?.get?.(
       {
-        ac_theme: "blue",
+        ac_theme: "dark",
         ac_mode: "single",
         ac_startKey: "p",
         ac_stopKey: "e",
         ac_intervalMs: 200
       },
-      data => {
-        applyThemeToPanel(data.ac_theme || "blue");
-        switchPanelMode(data.ac_mode || "single");
-        state.shortcuts.startKey = (data.ac_startKey || "p").toLowerCase();
-        state.shortcuts.stopKey  = (data.ac_stopKey  || "e").toLowerCase();
+      (data) => {
+        applyTheme(data.ac_theme);
+        state.mode = data.ac_mode === "multi" ? "multi" : "single";
+        state.shortcuts.startKey = String(data.ac_startKey || "p").toLowerCase();
+        state.shortcuts.stopKey = String(data.ac_stopKey || "e").toLowerCase();
         state.intervalMs = Math.max(10, Number(data.ac_intervalMs) || 200);
 
         if (state.ui.intervalInput) {
           state.ui.intervalInput.value = String(state.intervalMs);
         }
         if (state.ui.multiDefaultIntervalInput) {
-          state.ui.multiDefaultIntervalInput.value = String(state.intervalMs);
+          state.ui.multiDefaultIntervalInput.value = String(Math.max(50, state.intervalMs));
         }
+
+        updateShortcutDisplays();
+        updateTargetUI();
+        renderMultiTargets();
+        switchMode(state.mode);
       }
     );
   }
 
-  function switchPanelMode(mode) {
-    state.mode = mode === "multi" ? "multi" : "single";
-
-    const singlePanel = document.getElementById("ac-single-panel");
-    const multiPanel  = document.getElementById("ac-multi-panel");
-
-    if (singlePanel) {
-      singlePanel.style.display = state.mode === "single" ? "block" : "none";
-    }
-    if (multiPanel) {
-      multiPanel.style.display = state.mode === "multi" ? "block" : "none";
-    }
-
-    if (state.ui.panel) {
-      state.ui.panel
-        .querySelectorAll("[data-ac-mode-tab]")
-        .forEach(btn => {
-          btn.classList.toggle(
-            "ac-mode-tab-active",
-            btn.dataset.acModeTab === state.mode
-          );
-        });
-    }
-
-    const countSingle = document.getElementById("ac-click-count-single");
-    const countMulti  = document.getElementById("ac-click-count-multi");
-    state.ui.countDisplay = state.mode === "multi" ? countMulti : countSingle;
-
-    if (state.ui.startBtn) {
-      if (state.mode === "multi") {
-        state.ui.startBtn.disabled = !state.multi.targets.length;
-      } else {
-        state.ui.startBtn.disabled = false;
-      }
-    }
-
-    chrome.storage?.sync?.set({ ac_mode: state.mode });
-  }
-
-  function createPanel(initialMode) {
+  function buildPanel(initialMode) {
     if (state.ui.panel) {
       state.ui.panel.style.display = "block";
       state.panelActive = true;
-      switchPanelMode(initialMode || state.mode);
+      switchMode(initialMode || state.mode);
       return;
     }
 
-    state.mode = initialMode || "single";
-
     const panel = document.createElement("div");
     panel.id = "ac-panel";
+    panel.dataset.theme = "dark";
+
     panel.innerHTML = `
-      <div id="ac-header">
-        <div id="ac-title">
-          <span id="ac-title-icon">●</span>
-          <span id="ac-title-text">AUTO CLICKER</span>
-        </div>
-        <div id="ac-header-right">
-          <button id="ac-theme-toggle" type="button" title="Toggle theme"></button>
-          <button id="ac-close" type="button" title="Close panel">×</button>
-        </div>
-      </div>
+      <div id="ac-shell">
+        <div id="ac-header">
+          <div id="ac-brand">
+            <div id="ac-brand-badge">
+              <svg id="ac-brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="9"></circle>
+                <path d="M12 7v5l3 2"></path>
+              </svg>
+            </div>
+            <div id="ac-brand-texts">
+              <div id="ac-brand-title">Auto Clicker</div>
+              <div id="ac-brand-subtitle">Floating control app · v2.0.0</div>
+            </div>
+          </div>
 
-      <div id="ac-body">
-        <div id="ac-status-row">
-          <span id="ac-status-label">Status</span>
-          <span id="ac-status-text">Ready</span>
+          <div id="ac-header-actions">
+            <button id="ac-theme-toggle" class="ac-icon-btn" type="button" title="Toggle theme">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 3a1 1 0 0 1 1 1v1"></path>
+                <path d="M12 19v1a1 1 0 0 0 1 1"></path>
+                <path d="M4.22 4.22l.7.7"></path>
+                <path d="M18.36 18.36l.7.7"></path>
+                <path d="M3 12h1"></path>
+                <path d="M19 12h1"></path>
+                <path d="M4.22 19.78l.7-.7"></path>
+                <path d="M18.36 5.64l.7-.7"></path>
+                <circle cx="12" cy="12" r="4"></circle>
+              </svg>
+            </button>
+
+            <button id="ac-close" class="ac-icon-btn" type="button" title="Close panel">×</button>
+          </div>
         </div>
 
-        <div id="ac-mode-tabs">
-          <button data-ac-mode-tab="single" class="ac-mode-tab">Single</button>
-          <button data-ac-mode-tab="multi"  class="ac-mode-tab">Multi</button>
-        </div>
+        <div id="ac-body">
+          <div id="ac-status-hero">
+            <div id="ac-status-copy">
+              <div id="ac-status-label">
+                <span id="ac-status-dot"></span>
+                Activity
+              </div>
+              <div id="ac-status-text" data-tone="accent">Ready</div>
+              <div id="ac-status-sub">Pick a fixed target or start cursor mode.</div>
+            </div>
 
-        <div id="ac-single-panel">
-          <div id="ac-position-row">
-            <div id="ac-position-info">
-              <button id="ac-target" type="button" title="Drag or click to pick a fixed position"></button>
-              <div>
-                <div id="ac-position-label">Position</div>
-                <div id="ac-position-mode-label">Cursor</div>
+            <div id="ac-count-card">
+              <span id="ac-count-value">0</span>
+              <span id="ac-count-label">Clicks</span>
+            </div>
+          </div>
+
+          <div id="ac-mode-switch">
+            <button class="ac-tab-btn active" data-ac-mode="single" type="button">Single</button>
+            <button class="ac-tab-btn" data-ac-mode="multi" type="button">Multi</button>
+          </div>
+
+          <div id="ac-single-view" class="ac-panel-view active">
+            <div class="ac-card">
+              <div class="ac-card-title">Target</div>
+              <div id="ac-target-card">
+                <div id="ac-target-copy">
+                  <div id="ac-target-mode">Cursor follows live mouse</div>
+                  <div id="ac-target-coords">No fixed target selected</div>
+                </div>
+
+                <div id="ac-fixed-indicator">
+                  <div id="ac-fixed-indicator-core"></div>
+                </div>
+              </div>
+
+              <div class="ac-btn-row" style="margin-top: 10px;">
+                <button id="ac-pick-fixed" class="ac-btn ac-btn-primary" type="button">Add Fixed Target</button>
+                <button id="ac-clear-fixed" class="ac-btn ac-btn-ghost" type="button" disabled>Clear</button>
               </div>
             </div>
-            <button id="ac-position-reset" type="button" disabled title="Reset fixed position">↺</button>
+
+            <div class="ac-card">
+              <div class="ac-card-title">Timing</div>
+              <div class="ac-grid">
+                <div class="ac-field">
+                  <label class="ac-label" for="ac-interval">Interval</label>
+                  <div class="ac-input-wrap">
+                    <input id="ac-interval" class="ac-inline-input" type="number" min="10" value="200">
+                    <span class="ac-unit">ms</span>
+                  </div>
+                </div>
+
+                <div class="ac-field">
+                  <label class="ac-label" for="ac-max-clicks">Max Clicks</label>
+                  <div class="ac-input-wrap">
+                    <input id="ac-max-clicks" class="ac-inline-input" type="number" min="1" value="1000">
+                    <span class="ac-unit">count</span>
+                  </div>
+                </div>
+              </div>
+
+              <div class="ac-toggle-row">
+                <div class="ac-toggle-copy">
+                  <div class="ac-toggle-title">Limit total clicks</div>
+                  <div class="ac-toggle-sub">Stop automatically after the selected count.</div>
+                </div>
+                <label class="ac-toggle">
+                  <input id="ac-max-enabled" type="checkbox">
+                  <span class="ac-toggle-slider"></span>
+                </label>
+              </div>
+
+              <div class="ac-toggle-row">
+                <div class="ac-toggle-copy">
+                  <div class="ac-toggle-title">Jitter</div>
+                  <div class="ac-toggle-sub">Randomize the click point slightly to look less robotic.</div>
+                </div>
+                <div class="ac-input-wrap">
+                  <label class="ac-toggle">
+                    <input id="ac-jitter-enabled" type="checkbox">
+                    <span class="ac-toggle-slider"></span>
+                  </label>
+                  <input id="ac-jitter-radius" class="ac-inline-input" type="number" min="0" value="0">
+                  <span class="ac-unit">px</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="ac-card">
+              <div class="ac-card-title">Actions</div>
+              <div id="ac-main-actions">
+                <button id="ac-start-cursor" class="ac-btn ac-btn-success" type="button">Start Cursor</button>
+                <button id="ac-start-fixed" class="ac-btn ac-btn-primary" type="button" disabled>Start Fixed</button>
+                <button id="ac-stop-single" class="ac-btn ac-btn-danger" type="button" disabled>Stop</button>
+              </div>
+            </div>
           </div>
 
-          <button id="ac-position-start" class="ac-pos-btn" type="button" disabled>
-            Start fixed position
-          </button>
+          <div id="ac-multi-view" class="ac-panel-view">
+            <div class="ac-card">
+              <div class="ac-card-title">Sequence</div>
+              <div id="ac-multi-actions">
+                <button id="ac-multi-add" class="ac-btn ac-btn-primary" type="button">Add Target</button>
+                <button id="ac-multi-clear" class="ac-btn ac-btn-ghost" type="button">Clear All</button>
+              </div>
 
-          <div class="ac-row">
-            <span class="ac-row-label">Clicks</span>
-            <span id="ac-click-count-single" class="ac-count">0</span>
+              <div class="ac-field" style="margin-top: 10px;">
+                <label class="ac-label" for="ac-multi-default-interval">Default interval for new targets</label>
+                <div class="ac-input-wrap">
+                  <input id="ac-multi-default-interval" class="ac-inline-input" type="number" min="50" value="200">
+                  <span class="ac-unit">ms</span>
+                </div>
+              </div>
+
+              <div id="ac-multi-list" style="margin-top: 12px;"></div>
+            </div>
+
+            <div class="ac-card">
+              <div class="ac-card-title">Actions</div>
+              <div id="ac-main-actions">
+                <button id="ac-start-multi" class="ac-btn ac-btn-success" type="button" disabled>Start Sequence</button>
+                <button id="ac-stop-multi" class="ac-btn ac-btn-danger" type="button" disabled>Stop</button>
+              </div>
+            </div>
           </div>
 
-          <div class="ac-row ac-row-inline">
-            <span class="ac-row-label">Interval</span>
-            <input id="ac-interval" type="number" min="10" value="200">
-            <span class="ac-row-suffix">ms</span>
-          </div>
+          <div id="ac-shortcuts">
+            <div id="ac-shortcuts-title">Keyboard Shortcuts</div>
 
-          <div class="ac-row ac-row-inline">
-            <span class="ac-row-label">Max clicks</span>
-            <label class="ac-toggle">
-              <input id="ac-max-clicks-enabled" type="checkbox">
-              <span class="ac-toggle-slider"></span>
-            </label>
-            <input id="ac-max-clicks" type="number" min="1" value="1000">
-          </div>
+            <div class="ac-shortcut-row">
+              <span>Start current mode</span>
+              <span class="ac-shortcut-key">
+                <kbd>Ctrl</kbd>
+                <kbd id="ac-start-key-display">P</kbd>
+              </span>
+            </div>
 
-          <div class="ac-row ac-row-inline">
-            <span class="ac-row-label">Jitter</span>
-            <label class="ac-toggle">
-              <input id="ac-jitter-enabled" type="checkbox">
-              <span class="ac-toggle-slider"></span>
-            </label>
-            <input id="ac-jitter-radius" type="number" min="0" value="0">
-            <span class="ac-row-suffix">px</span>
+            <div class="ac-shortcut-row">
+              <span>Stop</span>
+              <span class="ac-shortcut-key">
+                <kbd>Ctrl</kbd>
+                <kbd id="ac-stop-key-display">E</kbd>
+              </span>
+            </div>
           </div>
         </div>
 
-        <div id="ac-multi-panel">
-          <div class="ac-row">
-            <span class="ac-row-label">Clicks</span>
-            <span id="ac-click-count-multi" class="ac-count">0</span>
-          </div>
-
-          <div id="ac-multi-list"></div>
-
-          <div id="ac-multi-actions">
-            <button id="ac-multi-add" type="button">Add target</button>
-            <button id="ac-multi-remove-all" type="button">Clear all</button>
-          </div>
-
-          <div class="ac-row ac-row-inline">
-            <span class="ac-row-label">Default ms</span>
-            <input id="ac-multi-default-interval" type="number" min="50" value="200">
-            <span class="ac-row-suffix">ms</span>
-          </div>
-        </div>
-
-        <div id="ac-controls">
-          <button id="ac-start" type="button">Start</button>
-          <button id="ac-stop"  type="button" disabled>Stop</button>
-        </div>
-
-        <div id="ac-shortcuts">
-          <div class="ac-shortcuts-title">Keyboard shortcuts</div>
-          <div class="ac-shortcuts-row">
-            <span>Start</span>
-            <span><kbd>Ctrl</kbd> + <kbd id="ac-start-key-display">P</kbd></span>
-          </div>
-          <div class="ac-shortcuts-row">
-            <span>Stop</span>
-            <span><kbd>Ctrl</kbd> + <kbd id="ac-stop-key-display">E</kbd></span>
-          </div>
-        </div>
-      </div>
-
-      <div id="ac-footer">
-        <span class="ac-badge">v2.0.0</span>
-        <div class="ac-footer-right">
-          <span class="ac-brand">BINOP</span>
-          <a href="https://binopcz.github.io/autoclicker-web"
-             target="_blank" rel="noopener noreferrer">
-            Website
-          </a>
+        <div id="ac-footer">
+          <div id="ac-footer-badge">Binop · v2.0.0</div>
+          <a href="https://binopcz.github.io/autoclicker-web" target="_blank" rel="noopener noreferrer">Website</a>
         </div>
       </div>
     `;
 
     document.body.appendChild(panel);
+
     state.ui.panel = panel;
+    state.ui.statusText = document.getElementById("ac-status-text");
+    state.ui.statusSub = document.getElementById("ac-status-sub");
+    state.ui.countValue = document.getElementById("ac-count-value");
+    state.ui.themeToggle = document.getElementById("ac-theme-toggle");
+    state.ui.targetMode = document.getElementById("ac-target-mode");
+    state.ui.targetCoords = document.getElementById("ac-target-coords");
+    state.ui.intervalInput = document.getElementById("ac-interval");
+    state.ui.maxEnabled = document.getElementById("ac-max-enabled");
+    state.ui.maxClicksInput = document.getElementById("ac-max-clicks");
+    state.ui.jitterEnabled = document.getElementById("ac-jitter-enabled");
+    state.ui.jitterRadiusInput = document.getElementById("ac-jitter-radius");
+    state.ui.multiDefaultIntervalInput = document.getElementById("ac-multi-default-interval");
+    state.ui.multiList = document.getElementById("ac-multi-list");
+    state.ui.singleView = document.getElementById("ac-single-view");
+    state.ui.multiView = document.getElementById("ac-multi-view");
+    state.ui.startKeyDisplay = document.getElementById("ac-start-key-display");
+    state.ui.stopKeyDisplay = document.getElementById("ac-stop-key-display");
+
     state.panelActive = true;
 
-    // Wire up references
-    state.ui.statusText  = document.getElementById("ac-status-text");
-    state.ui.intervalInput = document.getElementById("ac-interval");
-    state.ui.startBtn    = document.getElementById("ac-start");
-    state.ui.stopBtn     = document.getElementById("ac-stop");
-    state.ui.multiList   = document.getElementById("ac-multi-list");
-    state.ui.removeAllBtn = document.getElementById("ac-multi-remove-all");
-    state.ui.multiDefaultIntervalInput =
-      document.getElementById("ac-multi-default-interval");
-
-    const countSingle = document.getElementById("ac-click-count-single");
-    const countMulti  = document.getElementById("ac-click-count-multi");
-    state.ui.countDisplay = initialMode === "multi" ? countMulti : countSingle;
-
-    // Mode tabs
-    panel.querySelectorAll("[data-ac-mode-tab]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        if (state.isRunning) stopClicking();
-        switchPanelMode(btn.dataset.acModeTab);
-      });
-    });
-
-    // Theme toggle
-    document.getElementById("ac-theme-toggle").addEventListener("click", () => {
-      const next = panel.dataset.theme === "green" ? "blue" : "green";
-      applyThemeToPanel(next);
-      chrome.storage?.sync?.set({ ac_theme: next });
-    });
-
-    // Close
-    document.getElementById("ac-close").addEventListener("click", () => {
-      stopClicking();
-      unlockSinglePosition();
-      clearMultiTargets();
-      hideTargetIndicator();
-      state.panelActive = false;
-      panel.style.display = "none";
-    });
-
-    // Single: position picking
-    const targetBtn   = document.getElementById("ac-target");
-    const resetBtn    = document.getElementById("ac-position-reset");
-    const posStartBtn = document.getElementById("ac-position-start");
-
-    let pickStartX = 0;
-    let pickStartY = 0;
-    let pickMoved  = false;
-    let lastPickX  = 0;
-    let lastPickY  = 0;
-
-    function onPickMove(e) {
-      lastPickX = e.clientX;
-      lastPickY = e.clientY;
-      if (
-        Math.abs(lastPickX - pickStartX) > 3 ||
-        Math.abs(lastPickY - pickStartY) > 3
-      ) {
-        pickMoved = true;
-      }
-      showTargetIndicator(lastPickX, lastPickY);
-    }
-
-    function onPickEnd() {
-      document.removeEventListener("mousemove", onPickMove, true);
-      document.removeEventListener("mouseup", onPickEnd, true);
-
-      if (pickMoved) {
-        lockSinglePosition(lastPickX, lastPickY);
-      } else {
-        if (state.single.positionLocked) {
-          unlockSinglePosition();
-        } else {
-          lockSinglePosition(state.mouse.x, state.mouse.y);
-        }
-      }
-    }
-
-    function startPicking(e) {
-      e.preventDefault();
-      e.stopPropagation();
-      pickStartX = e.clientX;
-      pickStartY = e.clientY;
-      lastPickX  = pickStartX;
-      lastPickY  = pickStartY;
-      pickMoved  = false;
-      showTargetIndicator(lastPickX, lastPickY);
-      document.addEventListener("mousemove", onPickMove, true);
-      document.addEventListener("mouseup",   onPickEnd,  true);
-    }
-
-    targetBtn.addEventListener("mousedown", startPicking);
-
-    resetBtn.addEventListener("click", () => {
-      if (state.isRunning) stopClicking();
-      unlockSinglePosition();
-    });
-
-    posStartBtn.addEventListener("click", () => {
-      if (!state.single.positionLocked) return;
-      if (state.isRunning && state.single.clickSource === "fixed") {
-        stopClicking();
-        return;
-      }
-      state.single.clickSource = "fixed";
-      posStartBtn.classList.add("ac-pos-btn-active");
-      posStartBtn.textContent = "Stop fixed position";
-      startClicking();
-    });
-
-    // Interval changes
-    state.ui.intervalInput.addEventListener("change", () => {
-      const val = parseInt(state.ui.intervalInput.value, 10);
-      state.intervalMs = Math.max(10, isNaN(val) ? 200 : val);
-      chrome.storage?.sync?.set({ ac_intervalMs: state.intervalMs });
-      updateCookieInterval(state.intervalMs);
-    });
-
-    state.ui.multiDefaultIntervalInput.addEventListener("change", () => {
-      const val = parseInt(state.ui.multiDefaultIntervalInput.value, 10);
-      state.intervalMs = Math.max(50, isNaN(val) ? 200 : val);
-      chrome.storage?.sync?.set({ ac_intervalMs: state.intervalMs });
-    });
-
-    // Max clicks
-    const maxEnabled = document.getElementById("ac-max-clicks-enabled");
-    const maxInput   = document.getElementById("ac-max-clicks");
-    maxEnabled.addEventListener("change", () => {
-      state.maxClicksEnabled = maxEnabled.checked;
-    });
-    maxInput.addEventListener("change", () => {
-      const val = parseInt(maxInput.value, 10);
-      state.maxClicks = Math.max(1, isNaN(val) ? 1000 : val);
-    });
-
-    // Jitter
-    const jitterEnabled = document.getElementById("ac-jitter-enabled");
-    const jitterRadius  = document.getElementById("ac-jitter-radius");
-    jitterEnabled.addEventListener("change", () => {
-      state.jitterEnabled = jitterEnabled.checked;
-    });
-    jitterRadius.addEventListener("change", () => {
-      const val = parseInt(jitterRadius.value, 10);
-      state.jitterRadius = Math.max(0, isNaN(val) ? 0 : val);
-    });
-
-    // Multi: add / remove / clear
-    const addBtn = document.getElementById("ac-multi-add");
-    const clearBtn = document.getElementById("ac-multi-remove-all");
-
-    addBtn.addEventListener("click", () => {
-      if (state.isRunning) return;
-      addBtn.disabled = true;
-      addBtn.textContent = "Click on the page (Esc to cancel)…";
-
-      const overlay = document.createElement("div");
-      overlay.id = "ac-multi-overlay";
-      overlay.style.position = "fixed";
-      overlay.style.inset = "0";
-      overlay.style.zIndex = "2147483646";
-      overlay.style.cursor = "crosshair";
-      overlay.style.background = "rgba(15,23,42,.15)";
-      document.body.appendChild(overlay);
-
-      const cancelOverlay = () => {
-        overlay.remove();
-        document.removeEventListener("keydown", onKey, true);
-        addBtn.disabled = false;
-        addBtn.textContent = "Add target";
-      };
-
-      const onKey = e => {
-        if (e.key === "Escape") {
-          e.preventDefault();
-          cancelOverlay();
-        }
-      };
-
-      overlay.addEventListener("click", e => {
-        e.preventDefault();
-        e.stopImmediatePropagation();
-        const x = e.clientX;
-        const y = e.clientY;
-        addMultiTarget(x, y, state.intervalMs);
-        cancelOverlay();
-      }, { once: true });
-
-      document.addEventListener("keydown", onKey, true);
-    });
-
-    clearBtn.addEventListener("click", () => {
-      if (state.isRunning) stopClicking();
-      clearMultiTargets();
-    });
-
-    // Start / Stop buttons
-    state.ui.startBtn.addEventListener("click", () => {
-      if (state.mode === "single") {
-        state.single.clickSource = "cursor";
-      }
-      startClicking();
-    });
-
-    state.ui.stopBtn.addEventListener("click", () => {
-      stopClicking();
-    });
-
-    // Shortcuts display + editing (simple click-to-change)
-    const startKeyDisplay = document.getElementById("ac-start-key-display");
-    const stopKeyDisplay  = document.getElementById("ac-stop-key-display");
-
-    function updateShortcutDisplay() {
-      startKeyDisplay.textContent = state.shortcuts.startKey.toUpperCase();
-      stopKeyDisplay.textContent  = state.shortcuts.stopKey.toUpperCase();
-    }
-
-    function editKey(which) {
-      const label = which === "start" ? startKeyDisplay : stopKeyDisplay;
-      label.textContent = "?";
-      const listener = e => {
-        e.preventDefault();
-        const key = e.key.toLowerCase();
-        if (key.length === 1 || key === "p" || key === "e") {
-          if (which === "start") {
-            state.shortcuts.startKey = key;
-            chrome.storage?.sync?.set({ ac_startKey: key });
-          } else {
-            state.shortcuts.stopKey = key;
-            chrome.storage?.sync?.set({ ac_stopKey: key });
-          }
-          updateShortcutDisplay();
-        }
-        document.removeEventListener("keydown", listener, true);
-      };
-      document.addEventListener("keydown", listener, true);
-    }
-
-    startKeyDisplay.addEventListener("click", () => editKey("start"));
-    stopKeyDisplay .addEventListener("click", () => editKey("stop"));
-
-    // Drag panel by header
-    const header = document.getElementById("ac-header");
-    let dragStartX = 0;
-    let dragStartY = 0;
-    let panelStartX = 0;
-    let panelStartY = 0;
-
-    function onDragMove(e) {
-      e.preventDefault();
-      panel.style.left = `${panelStartX + (e.clientX - dragStartX)}px`;
-      panel.style.top  = `${panelStartY + (e.clientY - dragStartY)}px`;
-      panel.style.right = "auto";
-      panel.style.bottom = "auto";
-      panel.style.margin = "0";
-    }
-
-    function onDragEnd() {
-      document.removeEventListener("mousemove", onDragMove);
-      document.removeEventListener("mouseup", onDragEnd);
-    }
-
-    header.addEventListener("mousedown", e => {
-      if ((e.target).id === "ac-close") return;
-      if ((e.target).id === "ac-theme-toggle") return;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      const rect = panel.getBoundingClientRect();
-      panelStartX = rect.left;
-      panelStartY = rect.top;
-      document.addEventListener("mousemove", onDragMove);
-      document.addEventListener("mouseup", onDragEnd);
-    });
-
-    // Load settings, theme and mode
-    loadSettingsAndInitTheme();
-    switchPanelMode(initialMode || "single");
+    bindPanelEvents();
+    loadSettings();
+    updateCountUI();
+    updateTargetUI();
     renderMultiTargets();
-    updateShortcutDisplay();
+    switchMode(initialMode || "single");
   }
 
-  // ----- Keyboard shortcuts -----
-  document.addEventListener("keydown", e => {
+  document.addEventListener("keydown", (event) => {
     if (!state.panelActive) return;
-    if (["INPUT", "TEXTAREA"].includes(document.activeElement?.tagName)) return;
+    if (!event.ctrlKey || event.altKey || event.metaKey) return;
 
-    const key = e.key.toLowerCase();
-    if (!e.ctrlKey || e.altKey || e.metaKey) return;
+    const activeTag = document.activeElement?.tagName;
+    if (activeTag === "INPUT" || activeTag === "TEXTAREA") return;
 
-    if (key === state.shortcuts.stopKey && state.isRunning) {
-      e.preventDefault();
-      stopClicking();
+    const key = String(event.key || "").toLowerCase();
+
+    if (key === state.shortcuts.stopKey) {
+      event.preventDefault();
+      if (state.isRunning) stopClicking();
       return;
     }
 
-    if (key === state.shortcuts.startKey && !state.isRunning) {
-      e.preventDefault();
+    if (key === state.shortcuts.startKey) {
+      event.preventDefault();
+
+      if (state.isRunning) return;
+
       if (state.mode === "single") {
-        state.single.clickSource = "cursor";
+        const source =
+          state.single.positionLocked && state.single.clickSource === "fixed"
+            ? "fixed"
+            : "cursor";
+        startClicking("single", source);
+        return;
       }
-      startClicking();
+
+      startClicking("multi");
+    }
+  }, true);
+
+  chrome.storage?.onChanged?.addListener((changes, areaName) => {
+    if (areaName !== "sync") return;
+
+    if (changes.ac_theme) {
+      applyTheme(changes.ac_theme.newValue);
+    }
+
+    if (changes.ac_mode && state.ui.panel && !state.isRunning) {
+      switchMode(changes.ac_mode.newValue);
     }
   });
 
-  // ----- Message listener for popup -----
-  chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
-    if (msg && msg.type === "ac:ping") {
+  chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
+    if (message?.type === "ac:ping") {
       sendResponse({ ok: true });
       return;
     }
-    if (msg && msg.type === "ac:show-panel") {
-      createPanel(msg.mode || "single");
+
+    if (message?.type === "ac:show-panel") {
+      buildPanel(message.mode || "single");
       sendResponse({ ok: true });
       return;
     }
