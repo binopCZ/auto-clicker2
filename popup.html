@@ -1,354 +1,494 @@
 <!doctype html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <title>Auto Clicker</title>
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="stylesheet" href="styles.css">
 
   <style>
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+    /* ── Reset ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
+    /* ── CSS Variables (dark default) ───────────────────── */
     :root {
-      color-scheme: dark;
+      --bg-gradient: linear-gradient(145deg, #0f0c29, #1a1a2e, #16213e);
+      --glass-bg: rgba(255, 255, 255, 0.05);
+      --glass-border: rgba(255, 255, 255, 0.12);
+      --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+      --accent: #7c6fff;
+      --accent-glow: rgba(124, 111, 255, 0.45);
+      --accent-hover: #9d8fff;
+      --text-primary: #f0eeff;
+      --text-secondary: rgba(240, 238, 255, 0.55);
+      --btn-bg: rgba(124, 111, 255, 0.15);
+      --btn-border: rgba(124, 111, 255, 0.5);
+      --btn-active-bg: rgba(124, 111, 255, 0.28);
+      --footer-border: rgba(255,255,255,0.08);
+      --toggle-bg: rgba(255,255,255,0.08);
+      --toggle-knob: #7c6fff;
+      --divider: rgba(255,255,255,0.08);
+      --badge-bg: rgba(124,111,255,0.18);
+      --badge-border: rgba(124,111,255,0.4);
     }
 
+    [data-theme="light"] {
+      --bg-gradient: linear-gradient(145deg, #e8e4ff, #f3f0ff, #eaf0ff);
+      --glass-bg: rgba(255, 255, 255, 0.55);
+      --glass-border: rgba(124, 111, 255, 0.25);
+      --glass-shadow: 0 8px 32px rgba(124, 111, 255, 0.18);
+      --accent: #5b4fcf;
+      --accent-glow: rgba(91, 79, 207, 0.3);
+      --accent-hover: #7c6fff;
+      --text-primary: #1a1340;
+      --text-secondary: rgba(26, 19, 64, 0.55);
+      --btn-bg: rgba(91, 79, 207, 0.08);
+      --btn-border: rgba(91, 79, 207, 0.35);
+      --btn-active-bg: rgba(91, 79, 207, 0.18);
+      --footer-border: rgba(91,79,207,0.15);
+      --toggle-bg: rgba(91,79,207,0.12);
+      --toggle-knob: #5b4fcf;
+      --divider: rgba(91,79,207,0.12);
+      --badge-bg: rgba(91,79,207,0.12);
+      --badge-border: rgba(91,79,207,0.3);
+    }
+
+    /* ── Body ───────────────────────────────────────────── */
     body {
-      width: 260px;
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+      width: 280px;
+      min-height: 320px;
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
       -webkit-font-smoothing: antialiased;
-      background: radial-gradient(circle at 0 0, #1e293b 0, #020617 55%);
-      color: #e5e7eb;
-      padding: 14px 14px 12px;
+      background: var(--bg-gradient);
+      color: var(--text-primary);
+      padding: 16px;
+      transition: background 0.35s ease, color 0.35s ease;
+      overflow: hidden;
     }
 
-    body.theme-green {
-      background: radial-gradient(circle at 0 0, #064e3b 0, #022c22 55%);
-      color: #ecfdf5;
+    /* ── Animated background orbs ───────────────────────── */
+    body::before,
+    body::after {
+      content: '';
+      position: fixed;
+      border-radius: 50%;
+      filter: blur(50px);
+      pointer-events: none;
+      z-index: 0;
+      animation: floatOrb 8s ease-in-out infinite alternate;
     }
 
+    body::before {
+      width: 160px; height: 160px;
+      top: -60px; left: -40px;
+      background: radial-gradient(circle, var(--accent-glow), transparent 70%);
+    }
+
+    body::after {
+      width: 120px; height: 120px;
+      bottom: -40px; right: -30px;
+      background: radial-gradient(circle, var(--accent-glow), transparent 70%);
+      animation-delay: -4s;
+    }
+
+    @keyframes floatOrb {
+      from { transform: translate(0, 0) scale(1); }
+      to   { transform: translate(12px, 16px) scale(1.12); }
+    }
+
+    /* ── Content wrapper (above orbs) ──────────────────── */
+    .popup-wrap {
+      position: relative;
+      z-index: 1;
+    }
+
+    /* ── Glass card ─────────────────────────────────────── */
+    .glass-card {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      border-radius: 18px;
+      box-shadow: var(--glass-shadow);
+      backdrop-filter: blur(16px) saturate(160%);
+      -webkit-backdrop-filter: blur(16px) saturate(160%);
+      padding: 14px;
+      transition: background 0.3s, border-color 0.3s;
+    }
+
+    /* ── Header ─────────────────────────────────────────── */
     .header {
       display: flex;
       align-items: center;
-      gap: 10px;
-      margin-bottom: 12px;
+      gap: 11px;
+      margin-bottom: 14px;
     }
 
-    .logo {
-      width: 32px;
-      height: 32px;
-      border-radius: 10px;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      background: #0f172a;
-      border: 1px solid rgba(148,163,184,.7);
+    .logo-wrap {
+      position: relative;
+      width: 38px;
+      height: 38px;
       flex-shrink: 0;
     }
 
-    body.theme-green .logo {
-      background: #022c22;
-      border-color: rgba(52,211,153,.8);
+    .logo-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 12px;
+      border: 1.5px solid var(--accent);
+      opacity: 0.6;
+      animation: rotatePulse 4s linear infinite;
     }
 
-    .logo svg {
-      color: #60a5fa;
+    @keyframes rotatePulse {
+      0%   { transform: rotate(0deg) scale(1);    opacity: 0.6; }
+      50%  { transform: rotate(180deg) scale(1.06); opacity: 1; }
+      100% { transform: rotate(360deg) scale(1);  opacity: 0.6; }
     }
 
-    body.theme-green .logo svg {
-      color: #22c55e;
-    }
-
-    .title-block {
+    .logo-inner {
+      position: absolute;
+      inset: 4px;
+      border-radius: 9px;
+      background: var(--btn-active-bg);
       display: flex;
-      flex-direction: column;
-      gap: 2px;
+      align-items: center;
+      justify-content: center;
     }
+
+    .logo-inner svg {
+      color: var(--accent);
+      filter: drop-shadow(0 0 4px var(--accent-glow));
+    }
+
+    .title-block { display: flex; flex-direction: column; gap: 1px; }
 
     .title {
-      font-size: 13px;
+      font-size: 14px;
       font-weight: 800;
-      letter-spacing: .14em;
+      letter-spacing: 0.15em;
       text-transform: uppercase;
+      color: var(--text-primary);
     }
 
     .subtitle {
       font-size: 9px;
       font-weight: 600;
-      letter-spacing: .08em;
+      letter-spacing: 0.1em;
       text-transform: uppercase;
-      color: #9ca3af;
+      color: var(--text-secondary);
     }
 
-    body.theme-green .subtitle {
-      color: #a7f3d0;
-    }
-
+    /* ── Divider ─────────────────────────────────────────── */
     .divider {
       height: 1px;
-      margin: 8px 0 10px;
-      background: linear-gradient(to right, transparent, rgba(148,163,184,.7), transparent);
+      margin: 10px 0 12px;
+      background: linear-gradient(
+        to right,
+        transparent,
+        var(--accent),
+        transparent
+      );
+      opacity: 0.4;
     }
 
+    /* ── Section label ───────────────────────────────────── */
     .section-label {
       font-size: 9px;
       font-weight: 700;
-      letter-spacing: .1em;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
-      color: #9ca3af;
-      margin-bottom: 6px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
     }
 
-    body.theme-green .section-label {
-      color: #a7f3d0;
-    }
-
+    /* ── Mode buttons ────────────────────────────────────── */
     .mode-buttons {
       display: flex;
       gap: 8px;
-      margin-bottom: 10px;
+      margin-bottom: 12px;
     }
 
     .mode-button {
       flex: 1;
-      padding: 10px 8px 9px;
-      border-radius: 10px;
-      border: 1px solid rgba(148,163,184,.7);
-      background: #020617;
-      color: #e5e7eb;
+      padding: 10px 6px 9px;
+      border-radius: 13px;
+      border: 1px solid var(--btn-border);
+      background: var(--btn-bg);
+      color: var(--text-primary);
       cursor: pointer;
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
       font-size: 10px;
       font-weight: 700;
-      letter-spacing: .06em;
+      letter-spacing: 0.07em;
       text-transform: uppercase;
-      transition: border-color .12s, background .12s, transform .08s;
+      transition:
+        border-color 0.2s,
+        background 0.2s,
+        transform 0.15s cubic-bezier(0.34,1.56,0.64,1),
+        box-shadow 0.2s;
+      position: relative;
+      overflow: hidden;
     }
 
-    .mode-button svg {
-      opacity: .75;
+    .mode-button::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      background: radial-gradient(circle at 50% 0%, var(--accent-glow), transparent 70%);
+      opacity: 0;
+      transition: opacity 0.2s;
     }
 
     .mode-button:hover {
-      border-color: #60a5fa;
-      background: #02091e;
+      transform: translateY(-2px) scale(1.03);
+      border-color: var(--accent);
+      box-shadow: 0 4px 16px var(--accent-glow);
     }
+
+    .mode-button:hover::after { opacity: 1; }
+
+    .mode-button:active { transform: scale(0.96); }
+
+    .mode-button svg { opacity: 0.8; transition: opacity 0.2s; }
+    .mode-button:hover svg,
+    .mode-button.active svg { opacity: 1; }
 
     .mode-button.active {
-      border-color: #60a5fa;
-      background: #0b1120;
+      border-color: var(--accent);
+      background: var(--btn-active-bg);
+      box-shadow: 0 0 14px var(--accent-glow);
     }
 
-    body.theme-green .mode-button:hover {
-      border-color: #22c55e;
-      background: #022c22;
-    }
+    .mode-button.active::after { opacity: 1; }
 
-    body.theme-green .mode-button.active {
-      border-color: #22c55e;
-      background: #022c22;
-    }
-
+    /* ── Info text ───────────────────────────────────────── */
     .info {
       font-size: 10px;
-      color: #9ca3af;
-      margin-bottom: 8px;
-      line-height: 1.4;
+      color: var(--text-secondary);
+      margin-bottom: 12px;
+      line-height: 1.5;
     }
 
-    body.theme-green .info {
-      color: #a7f3d0;
-    }
-
-    .info b {
-      color: #e5e7eb;
-      font-weight: 600;
-    }
-
-    body.theme-green .info b {
-      color: #ecfdf5;
-    }
-
+    /* ── Open panel button ───────────────────────────────── */
     #open-panel-btn {
       width: 100%;
-      padding: 10px 0;
+      padding: 11px 0;
       border-radius: 999px;
-      border: 0;
+      border: none;
       cursor: pointer;
       font-size: 12px;
       font-weight: 800;
-      letter-spacing: .12em;
+      letter-spacing: 0.14em;
       text-transform: uppercase;
-      color: #f9fafb;
-      background: linear-gradient(135deg, #22c55e, #16a34a);
-      box-shadow: 0 8px 22px rgba(22,163,74,.5);
-      margin-bottom: 10px;
-      transition: transform .08s, box-shadow .12s, filter .12s;
+      color: #fff;
+      background: linear-gradient(135deg, var(--accent), #a78bfa);
+      box-shadow: 0 6px 24px var(--accent-glow);
+      margin-bottom: 12px;
+      position: relative;
+      overflow: hidden;
+      transition:
+        transform 0.15s cubic-bezier(0.34,1.56,0.64,1),
+        box-shadow 0.2s,
+        filter 0.2s;
     }
 
+    #open-panel-btn::before {
+      content: '';
+      position: absolute;
+      top: -50%; left: -60%;
+      width: 60%; height: 200%;
+      background: rgba(255,255,255,0.18);
+      transform: skewX(-20deg);
+      transition: left 0.4s ease;
+    }
+
+    #open-panel-btn:hover::before { left: 110%; }
+
     #open-panel-btn:hover {
-      transform: translateY(-1px);
-      filter: brightness(1.06);
-      box-shadow: 0 12px 26px rgba(22,163,74,.6);
+      transform: translateY(-2px);
+      box-shadow: 0 10px 30px var(--accent-glow);
+      filter: brightness(1.08);
     }
 
     #open-panel-btn:active {
-      transform: translateY(0) scale(.97);
+      transform: scale(0.96);
     }
 
+    /* ── Footer ──────────────────────────────────────────── */
     .footer {
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding-top: 6px;
-      border-top: 1px solid rgba(148,163,184,.6);
+      padding-top: 10px;
+      border-top: 1px solid var(--footer-border);
       font-size: 9px;
-      color: #9ca3af;
-    }
-
-    body.theme-green .footer {
-      color: #a7f3d0;
-      border-top-color: rgba(52,211,153,.7);
+      color: var(--text-secondary);
     }
 
     .badge {
-      padding: 2px 7px;
+      padding: 3px 9px;
       border-radius: 999px;
-      border: 1px solid rgba(148,163,184,.7);
+      border: 1px solid var(--badge-border);
+      background: var(--badge-bg);
       text-transform: uppercase;
-      letter-spacing: .08em;
+      letter-spacing: 0.1em;
       font-weight: 700;
-      color: #e5e7eb;
+      color: var(--accent);
+      font-size: 9px;
     }
 
     .footer-right {
       display: flex;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
     }
 
-    #popup-theme-toggle {
+    /* ── Theme toggle ────────────────────────────────────── */
+    #theme-toggle {
       position: relative;
-      width: 34px;
-      height: 18px;
+      width: 40px;
+      height: 20px;
       border-radius: 999px;
-      border: 1px solid rgba(148,163,184,.7);
-      background: #020617;
+      border: 1px solid var(--btn-border);
+      background: var(--toggle-bg);
       cursor: pointer;
+      transition: background 0.25s, border-color 0.25s;
     }
 
-    #popup-theme-knob {
+    #theme-knob {
       position: absolute;
-      top: 2px;
-      left: 2px;
+      top: 3px;
+      left: 3px;
       width: 12px;
       height: 12px;
-      border-radius: 999px;
-      background: #60a5fa;
-      box-shadow: 0 1px 3px rgba(0,0,0,.7);
-      transition: transform .18s cubic-bezier(.4,0,.2,1), background .16s;
+      border-radius: 50%;
+      background: var(--toggle-knob);
+      box-shadow: 0 0 6px var(--accent-glow);
+      transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1), background 0.25s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 7px;
     }
 
-    body.theme-green #popup-theme-toggle {
-      background: #022c22;
-      border-color: rgba(52,211,153,.8);
+    [data-theme="light"] #theme-knob {
+      transform: translateX(19px);
     }
 
-    body.theme-green #popup-theme-knob {
-      transform: translateX(14px);
-      background: #22c55e;
+    /* sun/moon icons inside knob */
+    #theme-knob::after {
+      content: '🌙';
+      position: absolute;
+      font-size: 8px;
+      line-height: 1;
     }
 
+    [data-theme="light"] #theme-knob::after {
+      content: '☀️';
+    }
+
+    /* ── Footer link ─────────────────────────────────────── */
     .footer-link {
       text-decoration: none;
       text-transform: uppercase;
-      letter-spacing: .08em;
+      letter-spacing: 0.09em;
       font-weight: 700;
-      color: #93c5fd;
+      font-size: 9px;
+      color: var(--accent);
+      transition: color 0.15s, text-shadow 0.15s;
     }
 
     .footer-link:hover {
-      color: #bfdbfe;
+      color: var(--accent-hover);
+      text-shadow: 0 0 8px var(--accent-glow);
     }
 
-    body.theme-green .footer-link {
-      color: #6ee7b7;
+    /* ── Entrance animation ──────────────────────────────── */
+    .glass-card {
+      animation: slideUp 0.35s cubic-bezier(0.34,1.2,0.64,1) both;
     }
 
-    body.theme-green .footer-link:hover {
-      color: #bbf7d0;
+    @keyframes slideUp {
+      from { opacity: 0; transform: translateY(14px) scale(0.97); }
+      to   { opacity: 1; transform: translateY(0) scale(1); }
     }
   </style>
 </head>
 <body>
-  <header class="header">
-    <div class="logo">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2.4"
-           stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="10"></circle>
-        <path d="M12 8v4l3 3"></path>
-      </svg>
-    </div>
-    <div class="title-block">
-      <div class="title">Auto Clicker</div>
-      <div class="subtitle">by Binop · v2.0.0</div>
-    </div>
-  </header>
+  <div class="popup-wrap">
+    <div class="glass-card">
 
-  <div class="divider"></div>
+      <!-- Header -->
+      <header class="header">
+        <div class="logo-wrap">
+          <div class="logo-ring"></div>
+          <div class="logo-inner">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/>
+              <polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+        </div>
+        <div class="title-block">
+          <div class="title">Auto Clicker</div>
+          <div class="subtitle">by Binop · v2.0.0</div>
+        </div>
+      </header>
 
-  <div class="section-label">Mode</div>
+      <div class="divider"></div>
 
-  <div class="mode-buttons">
-    <button class="mode-button active" id="popup-mode-single">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2"
-           stroke-linecap="round" stroke-linejoin="round">
-        <rect x="6" y="3" width="12" height="18" rx="6"></rect>
-        <path d="M12 3v7"></path>
-        <circle cx="9" cy="10" r="2" fill="currentColor" stroke="none"></circle>
-      </svg>
-      Single
-    </button>
-
-    <button class="mode-button" id="popup-mode-multi">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-           stroke="currentColor" stroke-width="2"
-           stroke-linecap="round" stroke-linejoin="round">
-        <circle cx="12" cy="12" r="9"></circle>
-        <circle cx="12" cy="12" r="4"></circle>
-        <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"></circle>
-        <line x1="12" y1="3" x2="12" y2="1"></line>
-        <line x1="12" y1="21" x2="12" y2="23"></line>
-        <line x1="3"  y1="12" x2="1"  y2="12"></line>
-        <line x1="21" y1="12" x2="23" y2="12"></line>
-      </svg>
-      Multi
-    </button>
-  </div>
-
-  <div class="info">
-    Panel opens on the active tab.<br>
-    Shortcuts are shown inside the panel.
-  </div>
-
-  <button id="open-panel-btn">Open panel</button>
-
-  <footer class="footer">
-    <span class="badge">v2.0.0</span>
-    <div class="footer-right">
-      <div id="popup-theme-toggle" title="Toggle theme">
-        <div id="popup-theme-knob"></div>
+      <!-- Mode -->
+      <div class="section-label">Click Mode</div>
+      <div class="mode-buttons">
+        <button class="mode-button active" id="popup-mode-single">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2v-4M9 21H5a2 2 0 0 1-2-2v-4m0 0h18"/>
+          </svg>
+          Single
+        </button>
+        <button class="mode-button" id="popup-mode-multi">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2.2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="9"/>
+            <circle cx="12" cy="12" r="4"/>
+            <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
+          </svg>
+          Multi
+        </button>
       </div>
-      <a class="footer-link" href="https://binopcz.github.io/autoclicker-web"
-         target="_blank" rel="noopener noreferrer">
-        Site
-      </a>
+
+      <!-- Info -->
+      <p class="info">
+        Opens the clicker panel on your active tab.<br>
+        Shortcuts are shown inside the panel.
+      </p>
+
+      <!-- CTA button -->
+      <button id="open-panel-btn">⚡ Open Panel</button>
+
+      <!-- Footer -->
+      <footer class="footer">
+        <span class="badge">v2.0.0</span>
+        <div class="footer-right">
+          <div id="theme-toggle" title="Toggle light / dark">
+            <div id="theme-knob"></div>
+          </div>
+          <a class="footer-link"
+             href="https://binopcz.github.io/autoclicker-web"
+             target="_blank" rel="noopener noreferrer">Site</a>
+        </div>
+      </footer>
+
     </div>
-  </footer>
+  </div>
 
   <script src="popup.js"></script>
 </body>
