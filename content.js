@@ -1040,17 +1040,20 @@
     const singleView = shadowRoot.getElementById("ac-single-view");
     const multiView = shadowRoot.getElementById("ac-multi-view");
     const posControl = shadowRoot.getElementById("ac-position-control");
+    const speedControl = shadowRoot.getElementById("ac-speed"); // ADD
 
     if (panelMode === "single") {
       if (singleView) singleView.style.display = "block";
       if (multiView) multiView.style.display = "none";
       if (posControl) posControl.style.display = "flex";
+      if (speedControl) speedControl.style.display = "flex"; // ADD
       renderMultiMarkers();
       showSingleIndicator();
     } else {
       if (singleView) singleView.style.display = "none";
       if (multiView) multiView.style.display = "block";
       if (posControl) posControl.style.display = "none";
+      if (speedControl) speedControl.style.display = "none"; // ADD
       clearMultiMarkers();
       renderMultiMarkers();
       hideIndicatorIfNotMultiPicking();
