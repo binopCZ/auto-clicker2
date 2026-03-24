@@ -1,10 +1,10 @@
 {
   "manifest_version": 3,
   "name": "Auto Clicker",
-  "version": "1.1.2",
-  "author": "Binop",
-  "description": "Automatic clicker with adjustable speed and live click counter",
-  "homepage_url": "https://github.com/binopCZ/auto-clicker",
+  "version": "2.0",
+  "author": "BINOP",
+  "description": "Advanced automatic clicker with multi-target support and adjustable speed.",
+  "homepage_url": "https://binopcz.github.io/autoclicker-web/",
 
   "permissions": ["storage", "scripting", "activeTab"],
   "host_permissions": ["*://orteil.dashnet.org/*"],
@@ -32,8 +32,7 @@
   "content_scripts": [
     {
       "matches": ["<all_urls>"],
-      "js": ["content.js"],
-      "css": ["styles.css"]
+      "js": ["content.js"]
     }
   ]
 }
