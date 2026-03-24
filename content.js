@@ -296,7 +296,7 @@
 
   function addMultiTarget(x, y) {
     const defaultInterval = 200 + multiTargets.length * 100;
-    multiTargets.push({ x, y, interval: defaultInterval, repeat: true
+    multiTargets.push({ x, y, interval: defaultInterval, repeat: true });      
       renderMultiTargets();
     renderMultiMarkers();
   }
