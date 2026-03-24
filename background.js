@@ -1,7 +1,38 @@
-// background.js
-// Service worker — handles Cookie Clicker integration via MAIN world injection.
+function ccStartInPage(intervalMs) {
+  try {
+    const ms = Math.max(10, Number(intervalMs) || 50);
 
-async function executeInMainWorld(tabId, func, args = []) {
+    // Stop old timer
+    if (window.__ac_cc_timer) {
+      clearInterval(window.__ac_cc_timer);
+      window.__ac_cc_timer = null;
+    }
+
+    // Start new timer
+    window.__ac_cc_timer = setInterval(() => {
+      try {
+        if (window.Game && typeof window.Game.ClickCookie === "function") {
+          window.Game.ClickCookie();
+          return;
+        }
+        // fallback
+        const el = document.getElementById("bigCookie");
+        if (el) el.click();
+      } catch (e) {}
+    }, ms);
+  } catch (e) {}
+}
+
+function ccStopInPage() {
+  try {
+    if (window.__ac_cc_timer) {
+      clearInterval(window.__ac_cc_timer);
+      window.__ac_cc_timer = null;
+    }
+  } catch (e) {}
+}
+
+async function execInMainWorld(tabId, func, args) {
   await chrome.scripting.executeScript({
     target: { tabId },
     world: "MAIN",
@@ -10,73 +41,40 @@ async function executeInMainWorld(tabId, func, args = []) {
   });
 }
 
-// ── Cookie Clicker functions (run in page context) ──────
-
-function startCookieClicker(intervalMs) {
-  const ms = Math.max(10, Number(intervalMs) || 50);
-
-  if (window.__ac_cookieTimer) {
-    clearInterval(window.__ac_cookieTimer);
-    window.__ac_cookieTimer = null;
-  }
-
-  window.__ac_cookieTimer = setInterval(() => {
-    try {
-      if (window.Game?.ClickCookie) {
-        window.Game.ClickCookie();
-        return;
-      }
-      document.getElementById("bigCookie")?.click();
-    } catch (_) { /* ignore */ }
-  }, ms);
-}
-
-function stopCookieClicker() {
-  if (window.__ac_cookieTimer) {
-    clearInterval(window.__ac_cookieTimer);
-    window.__ac_cookieTimer = null;
-  }
-}
-
-function setCookieInterval(intervalMs) {
-  startCookieClicker(intervalMs);
-}
-
-// ── Message listener ────────────────────────────────────
-
-chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   (async () => {
     try {
-      if (!sender.tab || typeof sender.tab.id !== "number") {
-        sendResponse({ ok: false, error: "No active tab" });
+      if (!msg || !sender?.tab?.id) {
+        sendResponse({ ok: false, error: "No tab" });
         return;
       }
 
       const tabId = sender.tab.id;
 
-      switch (message.type) {
-        case "cookie:start":
-          await executeInMainWorld(tabId, startCookieClicker, [message.intervalMs]);
-          sendResponse({ ok: true });
-          break;
-
-        case "cookie:stop":
-          await executeInMainWorld(tabId, stopCookieClicker);
-          sendResponse({ ok: true });
-          break;
-
-        case "cookie:setInterval":
-          await executeInMainWorld(tabId, setCookieInterval, [message.intervalMs]);
-          sendResponse({ ok: true });
-          break;
-
-        default:
-          sendResponse({ ok: false, error: "Unknown message type" });
+      if (msg.type === "CC_START") {
+        await execInMainWorld(tabId, ccStartInPage, [msg.intervalMs]);
+        sendResponse({ ok: true });
+        return;
       }
-    } catch (err) {
-      sendResponse({ ok: false, error: err?.message ?? String(err) });
+
+      if (msg.type === "CC_STOP") {
+        await execInMainWorld(tabId, ccStopInPage, []);
+        sendResponse({ ok: true });
+        return;
+      }
+
+      if (msg.type === "CC_SET_INTERVAL") {
+        await execInMainWorld(tabId, ccStartInPage, [msg.intervalMs]);
+        sendResponse({ ok: true });
+        return;
+      }
+
+      sendResponse({ ok: false, error: "Unknown message" });
+    } catch (e) {
+      // Typical: "Cannot access contents of url ... must request permission ..."
+      sendResponse({ ok: false, error: String(e && e.message ? e.message : e) });
     }
   })();
 
-  return true; // keep message channel open for async response
+  return true;
 });

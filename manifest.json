@@ -1,13 +1,21 @@
 {
   "manifest_version": 3,
   "name": "Auto Clicker",
-  "description": "Automatic clicker with single and multi-target modes, configurable shortcuts and Cookie Clicker support.",
-  "version": "2.0.0",
+  "version": "1.1.2",
   "author": "Binop",
+  "description": "Automatic clicker with adjustable speed and live click counter",
+  "homepage_url": "https://github.com/binopCZ/auto-clicker",
+
+  "permissions": ["storage", "scripting", "activeTab"],
+  "host_permissions": ["*://orteil.dashnet.org/*"],
+
+  "background": {
+    "service_worker": "background.js"
+  },
 
   "action": {
-    "default_title": "Auto Clicker",
     "default_popup": "popup.html",
+    "default_title": "Auto Clicker",
     "default_icon": {
       "16": "icons/icon16.png",
       "32": "icons/icon32.png"
@@ -15,24 +23,17 @@
   },
 
   "icons": {
-    "16":  "icons/icon16.png",
-    "32":  "icons/icon32.png",
-    "48":  "icons/icon48.png",
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
 
-  "background": {
-    "service_worker": "background.js",
-    "type": "module"
-  },
-
-  "permissions": [
-    "storage",
-    "scripting",
-    "activeTab"
-  ],
-
-  "host_permissions": [
-    "*://orteil.dashnet.org/*"
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "css": ["styles.css"]
+    }
   ]
 }

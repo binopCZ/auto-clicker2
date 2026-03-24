@@ -1,495 +1,102 @@
-<!doctype html>
-<html lang="en" data-theme="dark">
-<head>
-  <meta charset="utf-8">
-  <title>Auto Clicker</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" href="styles.css">
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Auto Clicker</title>
 
-  <style>
-    /* ── Reset ─────────────────────────────────────────── */
-    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    <!-- Reuse the same Aurora Glass UI as the in-page panel -->
+    <link rel="stylesheet" href="styles.css" />
 
-    /* ── CSS Variables (dark default) ───────────────────── */
-    :root {
-      --bg-gradient: linear-gradient(145deg, #0f0c29, #1a1a2e, #16213e);
-      --glass-bg: rgba(255, 255, 255, 0.05);
-      --glass-border: rgba(255, 255, 255, 0.12);
-      --glass-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-      --accent: #7c6fff;
-      --accent-glow: rgba(124, 111, 255, 0.45);
-      --accent-hover: #9d8fff;
-      --text-primary: #f0eeff;
-      --text-secondary: rgba(240, 238, 255, 0.55);
-      --btn-bg: rgba(124, 111, 255, 0.15);
-      --btn-border: rgba(124, 111, 255, 0.5);
-      --btn-active-bg: rgba(124, 111, 255, 0.28);
-      --footer-border: rgba(255,255,255,0.08);
-      --toggle-bg: rgba(255,255,255,0.08);
-      --toggle-knob: #7c6fff;
-      --divider: rgba(255,255,255,0.08);
-      --badge-bg: rgba(124,111,255,0.18);
-      --badge-border: rgba(124,111,255,0.4);
-    }
+    <!-- Popup-only overrides -->
+    <style>
+      html, body {
+        margin: 0;
+        padding: 0;
+        width: 292px; 
+        background: transparent;
+        font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+      }
+      #ac-panel {
+        position: relative;
+        bottom: auto;
+        right: auto;
+        inset: auto;
+        margin: 0;
+      }
+      #ac-close { display: none; }
+      #ac-panel a { color: inherit; }
+    </style>
 
-    [data-theme="light"] {
-      --bg-gradient: linear-gradient(145deg, #e8e4ff, #f3f0ff, #eaf0ff);
-      --glass-bg: rgba(255, 255, 255, 0.55);
-      --glass-border: rgba(124, 111, 255, 0.25);
-      --glass-shadow: 0 8px 32px rgba(124, 111, 255, 0.18);
-      --accent: #5b4fcf;
-      --accent-glow: rgba(91, 79, 207, 0.3);
-      --accent-hover: #7c6fff;
-      --text-primary: #1a1340;
-      --text-secondary: rgba(26, 19, 64, 0.55);
-      --btn-bg: rgba(91, 79, 207, 0.08);
-      --btn-border: rgba(91, 79, 207, 0.35);
-      --btn-active-bg: rgba(91, 79, 207, 0.18);
-      --footer-border: rgba(91,79,207,0.15);
-      --toggle-bg: rgba(91,79,207,0.12);
-      --toggle-knob: #5b4fcf;
-      --divider: rgba(91,79,207,0.12);
-      --badge-bg: rgba(91,79,207,0.12);
-      --badge-border: rgba(91,79,207,0.3);
-    }
+    <script src="popup.js" defer></script>
+  </head>
 
-    /* ── Body ───────────────────────────────────────────── */
-    body {
-      width: 280px;
-      min-height: 320px;
-      font-family: 'Inter', system-ui, -apple-system, sans-serif;
-      -webkit-font-smoothing: antialiased;
-      background: var(--bg-gradient);
-      color: var(--text-primary);
-      padding: 16px;
-      transition: background 0.35s ease, color 0.35s ease;
-      overflow: hidden;
-    }
-
-    /* ── Animated background orbs ───────────────────────── */
-    body::before,
-    body::after {
-      content: '';
-      position: fixed;
-      border-radius: 50%;
-      filter: blur(50px);
-      pointer-events: none;
-      z-index: 0;
-      animation: floatOrb 8s ease-in-out infinite alternate;
-    }
-
-    body::before {
-      width: 160px; height: 160px;
-      top: -60px; left: -40px;
-      background: radial-gradient(circle, var(--accent-glow), transparent 70%);
-    }
-
-    body::after {
-      width: 120px; height: 120px;
-      bottom: -40px; right: -30px;
-      background: radial-gradient(circle, var(--accent-glow), transparent 70%);
-      animation-delay: -4s;
-    }
-
-    @keyframes floatOrb {
-      from { transform: translate(0, 0) scale(1); }
-      to   { transform: translate(12px, 16px) scale(1.12); }
-    }
-
-    /* ── Content wrapper (above orbs) ──────────────────── */
-    .popup-wrap {
-      position: relative;
-      z-index: 1;
-    }
-
-    /* ── Glass card ─────────────────────────────────────── */
-    .glass-card {
-      background: var(--glass-bg);
-      border: 1px solid var(--glass-border);
-      border-radius: 18px;
-      box-shadow: var(--glass-shadow);
-      backdrop-filter: blur(16px) saturate(160%);
-      -webkit-backdrop-filter: blur(16px) saturate(160%);
-      padding: 14px;
-      transition: background 0.3s, border-color 0.3s;
-    }
-
-    /* ── Header ─────────────────────────────────────────── */
-    .header {
-      display: flex;
-      align-items: center;
-      gap: 11px;
-      margin-bottom: 14px;
-    }
-
-    .logo-wrap {
-      position: relative;
-      width: 38px;
-      height: 38px;
-      flex-shrink: 0;
-    }
-
-    .logo-ring {
-      position: absolute;
-      inset: 0;
-      border-radius: 12px;
-      border: 1.5px solid var(--accent);
-      opacity: 0.6;
-      animation: rotatePulse 4s linear infinite;
-    }
-
-    @keyframes rotatePulse {
-      0%   { transform: rotate(0deg) scale(1);    opacity: 0.6; }
-      50%  { transform: rotate(180deg) scale(1.06); opacity: 1; }
-      100% { transform: rotate(360deg) scale(1);  opacity: 0.6; }
-    }
-
-    .logo-inner {
-      position: absolute;
-      inset: 4px;
-      border-radius: 9px;
-      background: var(--btn-active-bg);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-    }
-
-    .logo-inner svg {
-      color: var(--accent);
-      filter: drop-shadow(0 0 4px var(--accent-glow));
-    }
-
-    .title-block { display: flex; flex-direction: column; gap: 1px; }
-
-    .title {
-      font-size: 14px;
-      font-weight: 800;
-      letter-spacing: 0.15em;
-      text-transform: uppercase;
-      color: var(--text-primary);
-    }
-
-    .subtitle {
-      font-size: 9px;
-      font-weight: 600;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-      color: var(--text-secondary);
-    }
-
-    /* ── Divider ─────────────────────────────────────────── */
-    .divider {
-      height: 1px;
-      margin: 10px 0 12px;
-      background: linear-gradient(
-        to right,
-        transparent,
-        var(--accent),
-        transparent
-      );
-      opacity: 0.4;
-    }
-
-    /* ── Section label ───────────────────────────────────── */
-    .section-label {
-      font-size: 9px;
-      font-weight: 700;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: var(--text-secondary);
-      margin-bottom: 8px;
-    }
-
-    /* ── Mode buttons ────────────────────────────────────── */
-    .mode-buttons {
-      display: flex;
-      gap: 8px;
-      margin-bottom: 12px;
-    }
-
-    .mode-button {
-      flex: 1;
-      padding: 10px 6px 9px;
-      border-radius: 13px;
-      border: 1px solid var(--btn-border);
-      background: var(--btn-bg);
-      color: var(--text-primary);
-      cursor: pointer;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      gap: 5px;
-      font-size: 10px;
-      font-weight: 700;
-      letter-spacing: 0.07em;
-      text-transform: uppercase;
-      transition:
-        border-color 0.2s,
-        background 0.2s,
-        transform 0.15s cubic-bezier(0.34,1.56,0.64,1),
-        box-shadow 0.2s;
-      position: relative;
-      overflow: hidden;
-    }
-
-    .mode-button::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      border-radius: inherit;
-      background: radial-gradient(circle at 50% 0%, var(--accent-glow), transparent 70%);
-      opacity: 0;
-      transition: opacity 0.2s;
-    }
-
-    .mode-button:hover {
-      transform: translateY(-2px) scale(1.03);
-      border-color: var(--accent);
-      box-shadow: 0 4px 16px var(--accent-glow);
-    }
-
-    .mode-button:hover::after { opacity: 1; }
-
-    .mode-button:active { transform: scale(0.96); }
-
-    .mode-button svg { opacity: 0.8; transition: opacity 0.2s; }
-    .mode-button:hover svg,
-    .mode-button.active svg { opacity: 1; }
-
-    .mode-button.active {
-      border-color: var(--accent);
-      background: var(--btn-active-bg);
-      box-shadow: 0 0 14px var(--accent-glow);
-    }
-
-    .mode-button.active::after { opacity: 1; }
-
-    /* ── Info text ───────────────────────────────────────── */
-    .info {
-      font-size: 10px;
-      color: var(--text-secondary);
-      margin-bottom: 12px;
-      line-height: 1.5;
-    }
-
-    /* ── Open panel button ───────────────────────────────── */
-    #open-panel-btn {
-      width: 100%;
-      padding: 11px 0;
-      border-radius: 999px;
-      border: none;
-      cursor: pointer;
-      font-size: 12px;
-      font-weight: 800;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-      color: #fff;
-      background: linear-gradient(135deg, var(--accent), #a78bfa);
-      box-shadow: 0 6px 24px var(--accent-glow);
-      margin-bottom: 12px;
-      position: relative;
-      overflow: hidden;
-      transition:
-        transform 0.15s cubic-bezier(0.34,1.56,0.64,1),
-        box-shadow 0.2s,
-        filter 0.2s;
-    }
-
-    #open-panel-btn::before {
-      content: '';
-      position: absolute;
-      top: -50%; left: -60%;
-      width: 60%; height: 200%;
-      background: rgba(255,255,255,0.18);
-      transform: skewX(-20deg);
-      transition: left 0.4s ease;
-    }
-
-    #open-panel-btn:hover::before { left: 110%; }
-
-    #open-panel-btn:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 10px 30px var(--accent-glow);
-      filter: brightness(1.08);
-    }
-
-    #open-panel-btn:active {
-      transform: scale(0.96);
-    }
-
-    /* ── Footer ──────────────────────────────────────────── */
-    .footer {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      padding-top: 10px;
-      border-top: 1px solid var(--footer-border);
-      font-size: 9px;
-      color: var(--text-secondary);
-    }
-
-    .badge {
-      padding: 3px 9px;
-      border-radius: 999px;
-      border: 1px solid var(--badge-border);
-      background: var(--badge-bg);
-      text-transform: uppercase;
-      letter-spacing: 0.1em;
-      font-weight: 700;
-      color: var(--accent);
-      font-size: 9px;
-    }
-
-    .footer-right {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-    }
-
-    /* ── Theme toggle ────────────────────────────────────── */
-    #theme-toggle {
-      position: relative;
-      width: 40px;
-      height: 20px;
-      border-radius: 999px;
-      border: 1px solid var(--btn-border);
-      background: var(--toggle-bg);
-      cursor: pointer;
-      transition: background 0.25s, border-color 0.25s;
-    }
-
-    #theme-knob {
-      position: absolute;
-      top: 3px;
-      left: 3px;
-      width: 12px;
-      height: 12px;
-      border-radius: 50%;
-      background: var(--toggle-knob);
-      box-shadow: 0 0 6px var(--accent-glow);
-      transition: transform 0.25s cubic-bezier(0.34,1.56,0.64,1), background 0.25s;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 7px;
-    }
-
-    [data-theme="light"] #theme-knob {
-      transform: translateX(19px);
-    }
-
-    /* sun/moon icons inside knob */
-    #theme-knob::after {
-      content: '🌙';
-      position: absolute;
-      font-size: 8px;
-      line-height: 1;
-    }
-
-    [data-theme="light"] #theme-knob::after {
-      content: '☀️';
-    }
-
-    /* ── Footer link ─────────────────────────────────────── */
-    .footer-link {
-      text-decoration: none;
-      text-transform: uppercase;
-      letter-spacing: 0.09em;
-      font-weight: 700;
-      font-size: 9px;
-      color: var(--accent);
-      transition: color 0.15s, text-shadow 0.15s;
-    }
-
-    .footer-link:hover {
-      color: var(--accent-hover);
-      text-shadow: 0 0 8px var(--accent-glow);
-    }
-
-    /* ── Entrance animation ──────────────────────────────── */
-    .glass-card {
-      animation: slideUp 0.35s cubic-bezier(0.34,1.2,0.64,1) both;
-    }
-
-    @keyframes slideUp {
-      from { opacity: 0; transform: translateY(14px) scale(0.97); }
-      to   { opacity: 1; transform: translateY(0) scale(1); }
-    }
-  </style>
-</head>
-<body>
-  <div class="popup-wrap">
-    <div class="glass-card">
-
+  <body>
+    <div id="ac-panel" data-theme="dark">
       <!-- Header -->
-      <header class="header">
-        <div class="logo-wrap">
-          <div class="logo-ring"></div>
-          <div class="logo-inner">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none"
-                 stroke="currentColor" stroke-width="2.5"
-                 stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/>
-              <polyline points="12 6 12 12 16 14"/>
-            </svg>
+      <div id="ac-header">
+        <div id="ac-title">
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M12 20a8 8 0 1 0 0-16 8 8 0 0 0 0 16Z"></path>
+            <path d="M12 14a2 2 0 1 0 0-4 2 2 0 0 0 0 4Z"></path>
+            <path d="M12 2v2"></path>
+            <path d="M12 20v2"></path>
+            <path d="m4.93 4.93 1.41 1.41"></path>
+            <path d="m17.66 17.66 1.41 1.41"></path>
+            <path d="M2 12h2"></path>
+            <path d="M20 12h2"></path>
+            <path d="m6.34 17.66-1.41 1.41"></path>
+            <path d="m19.07 4.93-1.41 1.41"></path>
+          </svg>
+          <span>Auto Clicker</span>
+        </div>
+
+        <div id="ac-header-right">
+          <!-- Professional UI Toggle Switch -->
+          <div id="ac-theme-toggle" role="switch" title="Toggle Theme">
+            <div id="ac-theme-knob"></div>
           </div>
         </div>
-        <div class="title-block">
-          <div class="title">Auto Clicker</div>
-          <div class="subtitle">by Binop · v2.0.0</div>
-        </div>
-      </header>
-
-      <div class="divider"></div>
-
-      <!-- Mode -->
-      <div class="section-label">Click Mode</div>
-      <div class="mode-buttons">
-        <button class="mode-button active" id="popup-mode-single">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2.2"
-               stroke-linecap="round" stroke-linejoin="round">
-            <path d="M9 3H5a2 2 0 0 0-2 2v4m6-6h10a2 2 0 0 1 2 2v4M9 3v18m0 0h10a2 2 0 0 0 2-2v-4M9 21H5a2 2 0 0 1-2-2v-4m0 0h18"/>
-          </svg>
-          Single
-        </button>
-        <button class="mode-button" id="popup-mode-multi">
-          <svg width="17" height="17" viewBox="0 0 24 24" fill="none"
-               stroke="currentColor" stroke-width="2.2"
-               stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="9"/>
-            <circle cx="12" cy="12" r="4"/>
-            <circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/>
-          </svg>
-          Multi
-        </button>
       </div>
 
-      <!-- Info -->
-      <p class="info">
-        Opens the clicker panel on your active tab.<br>
-        Shortcuts are shown inside the panel.
-      </p>
+      <!-- Body -->
+      <div id="ac-body">
+        <!-- Removed "Panel: Ready" status row for the popup -->
 
-      <!-- CTA button -->
-      <button id="open-panel-btn">⚡ Open Panel</button>
+        <p class="info-text" style="margin: 0 0 8px; color: var(--muted); font-size: 12px; line-height: 1.35; text-align: center;">
+          Open the control panel on the current tab to start clicking.
+        </p>
 
-      <!-- Footer -->
-      <footer class="footer">
-        <span class="badge">v2.0.0</span>
-        <div class="footer-right">
-          <div id="theme-toggle" title="Toggle light / dark">
-            <div id="theme-knob"></div>
-          </div>
-          <a class="footer-link"
-             href="https://binopcz.github.io/autoclicker-web"
-             target="_blank" rel="noopener noreferrer">Site</a>
+        <!-- Main button -->
+        <button class="ac-pos-btn" id="open-panel" type="button">
+          Open Panel Here
+        </button>
+
+        <div class="ac-divider"></div>
+
+        <div class="ac-footer">
+          <span class="ac-badge">v1.1.2</span>
+          <span class="ac-credits">
+            By <span class="ac-brand">BINOP</span>
+            ·
+            <!-- Improved Website Link -->
+            <a href="https://binopcz.github.io/autoclicker-web/" target="_blank" rel="noopener noreferrer" class="ac-footer-link">
+              Website
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path><polyline points="15 3 21 3 21 9"></polyline><line x1="10" y1="14" x2="21" y2="3"></line></svg>
+            </a>
+          </span>
         </div>
-      </footer>
-
+      </div>
     </div>
-  </div>
-
-  <script src="popup.js"></script>
-</body>
+  </body>
 </html>
