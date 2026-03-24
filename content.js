@@ -109,12 +109,12 @@
     targetIndicator = document.createElement("div");
     targetIndicator.id = "ac-target-indicator";
     targetIndicator.style.position = "fixed";
-    targetIndicator.style.width = "18px";
-    targetIndicator.style.height = "18px";
+    targetIndicator.style.width = "24px";
+    targetIndicator.style.height = "24px";
     targetIndicator.style.borderRadius = "999px";
-    targetIndicator.style.border = "2px solid rgba(34,197,94,0.95)";
-    targetIndicator.style.boxShadow = "0 0 0 5px rgba(34,197,94,0.14), 0 16px 45px rgba(34,197,94,0.10)";
-    targetIndicator.style.background = "radial-gradient(circle at 30% 30%, rgba(187,247,208,0.85) 0, rgba(34,197,94,0.22) 55%, rgba(0,0,0,0) 100%)";
+    targetIndicator.style.border = "2px solid rgba(34,197,94,1)";
+    targetIndicator.style.boxShadow = "0 0 0 3px rgba(255,255,255,0.7), 0 0 0 8px rgba(16,185,129,0.25), 0 0 6px rgba(0,0,0,0.6)";
+    targetIndicator.style.background = "radial-gradient(circle at 30% 30%, rgba(187,247,208,0.95) 0, rgba(34,197,94,0.45) 45%, rgba(0,0,0,0) 100%)";
     targetIndicator.style.transform = "translate(-50%, -50%)";
     targetIndicator.style.zIndex = "2147483647";
     targetIndicator.style.pointerEvents = "none";
@@ -273,7 +273,7 @@
       marker.style.borderRadius = "999px";
       marker.style.background = "rgba(34, 197, 94, 0.22)";
       marker.style.border = "2px solid rgba(34, 197, 94, 0.9)";
-      marker.style.boxShadow = "0 0 0 2px rgba(15, 23, 42, 0.55)";
+      marker.style.boxShadow = "0 0 0 2px rgba(0,0,0,0.28), 0 0 8px rgba(255,255,255,0.9)";
       marker.style.transform = "translate(-50%, -50%)";
       marker.style.pointerEvents = "none";
       marker.style.zIndex = "2147483646";
@@ -287,6 +287,7 @@
       label.style.fontSize = "10px";
       label.style.fontWeight = "800";
       label.style.color = "#ffffff";
+      label.style.textShadow = "0 0 3px rgba(0,0,0,0.7), 0 0 4px rgba(255,255,255,0.7)";
 
       marker.appendChild(label);
       document.body.appendChild(marker);
@@ -296,8 +297,8 @@
 
   function addMultiTarget(x, y) {
     const defaultInterval = 200 + multiTargets.length * 100;
-    multiTargets.push({ x, y, interval: defaultInterval, repeat: true });      
-      renderMultiTargets();
+    multiTargets.push({ x, y, interval: defaultInterval, loop: true });
+    renderMultiTargets();
     renderMultiMarkers();
   }
 
@@ -367,17 +368,28 @@
 
       intervalWrap.appendChild(intervalInput); intervalWrap.appendChild(msLabel);
 
-            const repeatWrap = document.createElement("div");
-            repeatWrap.className = "ac-multi-repeat-wrap";
-            const repeatCheckbox = document.createElement("input");
-            repeatCheckbox.type = "checkbox";
-            repeatCheckbox.checked = t.repeat !== false;
-            repeatCheckbox.addEventListener("change", () => { multiTargets[i].repeat = repeatCheckbox.checked; });
-            const repeatLabel = document.createElement("label");
-            repeatLabel.appendChild(repeatCheckbox);
-            const repeatText = document.createTextNode(" Opakovat");
-            repeatLabel.appendChild(repeatText);
-            repeatWrap.appendChild(repeatLabel);
+      const loopWrap = document.createElement("div");
+      loopWrap.style.display = "flex";
+      loopWrap.style.alignItems = "center";
+      loopWrap.style.gap = "6px";
+
+      const loopCheckbox = document.createElement("input");
+      loopCheckbox.type = "checkbox";
+      loopCheckbox.checked = t.loop !== false;
+      loopCheckbox.title = "If unchecked, this target is clicked once and removed";
+
+      loopCheckbox.addEventListener("change", () => {
+        multiTargets[i].loop = loopCheckbox.checked;
+      });
+
+      const loopLabel = document.createElement("label");
+      loopLabel.style.userSelect = "none";
+      loopLabel.style.fontSize = "11px";
+      loopLabel.style.opacity = "0.9";
+      loopLabel.textContent = "repeat";
+
+      loopWrap.appendChild(loopCheckbox);
+      loopWrap.appendChild(loopLabel);
 
       const removeButton = document.createElement("button");
       removeButton.type = "button";
@@ -391,7 +403,10 @@
 
       removeButton.addEventListener("click", () => { removeMultiTarget(i); });
 
-      row.appendChild(left); row.appendChild(repeatWrap); row.appendChild(intervalWrap); row.appendChild(removeButton);
+      row.appendChild(left);
+      row.appendChild(intervalWrap);
+      row.appendChild(loopWrap);
+      row.appendChild(removeButton);
       list.appendChild(row);
     });
   }
@@ -493,32 +508,44 @@
   function runMultiSequence() {
     if (ccActive) ccStop();
     if (!multiTargets.length) return;
+
     multiIndex = 0;
 
-    function scheduleNext() {
-      if (!isRunning || !multiTargets.length) return;
-      if (multiIndex >= multiTargets.length) multiIndex = 0;
-      
-      const index = multiIndex;
-      const target = multiTargets[index];
-      const el = getClickableAtPoint(target.x, target.y);
-      if (el) {
-        dispatchClick(el, target.x, target.y);
-        clickCount++;
-        if (countDisplay) countDisplay.textContent = clickCount;
+    function schedulePerTarget() {
+      if (!isRunning || !multiTargets.length) {
+        stopClicking();
+        setStatus("Multi sequence complete", "#60a5fa");
+        return;
       }
 
-            if (target.repeat === false) {
-                      multiTargets.splice(index, 1);
-                      renderMultiTargets();
-                      renderMultiMarkers();
-                    }
-      
+      if (multiIndex >= multiTargets.length) multiIndex = 0;
+
+      const target = multiTargets[multiIndex];
       const delay = target.interval > 0 ? target.interval : 200;
-      multiIndex = (multiIndex + 1) % multiTargets.length;
-      clickTimer = setTimeout(scheduleNext, delay);
+
+      if (target.loop !== false) {
+        const el = getClickableAtPoint(target.x, target.y);
+        if (el) {
+          dispatchClick(el, target.x, target.y);
+          clickCount++;
+          if (countDisplay) countDisplay.textContent = clickCount;
+        }
+      }
+
+      // keep target in list always; only skip if unchecked
+      multiIndex++;
+
+      if (!isRunning || !multiTargets.length) {
+        stopClicking();
+        setStatus("Multi sequence complete", "#60a5fa");
+        return;
+      }
+
+      if (multiIndex >= multiTargets.length) multiIndex = 0;
+      clickTimer = setTimeout(schedulePerTarget, delay);
     }
-    scheduleNext();
+
+    schedulePerTarget();
   }
 
   function startClicking() {
@@ -779,28 +806,44 @@
       }
       #ac-panel[data-theme="light"] #ac-clear-targets { color: #dc2626; }
 
-      #ac-multi-list { max-height:160px; overflow-y:auto; padding-right:6px; margin-bottom: 8px;}
-      .ac-multi-row {
-        display:flex; align-items:center; justify-content:space-between; gap:10px; padding:12px 14px;
-        margin-bottom:10px; border-radius:12px; background:rgba(15,23,42,0.6); border:1px solid rgba(148,163,184,0.15);
+      #ac-multi-list {
+        max-height:120px;
+        overflow-y:auto;
+        padding-right:6px;
+        margin-bottom: 8px;
       }
-      #ac-panel[data-theme="light"] .ac-multi-row { background:rgba(255,255,255,0.8); border-color:rgba(148,163,184,0.3); }
+      .ac-multi-row {
+        display:flex;
+        flex-wrap: wrap;
+        align-items:center;
+        justify-content:space-between;
+        gap:6px;
+        padding:6px 8px;
+        margin-bottom:6px;
+        border-radius:10px;
+        background:rgba(15,23,42,0.6);
+        border:1px solid rgba(148,163,184,0.15);
+      }
+      #ac-panel[data-theme="light"] .ac-multi-row {
+        background:rgba(255,255,255,0.82);
+        border-color:rgba(148,163,184,0.3);
+      }
       
-      .ac-multi-left { display:flex; flex-direction:column; gap:6px; min-width:110px; }
-      .ac-multi-index { font-weight:800; font-size:14px; color: var(--text); }
-      .ac-multi-coords { font-size:12px; opacity:0.6; font-family: ui-monospace, "JetBrains Mono", monospace; color: var(--text); }
+      .ac-multi-left { display:flex; flex-direction:column; gap:2px; min-width:74px; max-width:38%; }
+      .ac-multi-index { font-weight:800; font-size:11px; color: var(--text); }
+      .ac-multi-coords { font-size:9px; opacity:0.75; font-family: ui-monospace, "JetBrains Mono", monospace; color: var(--text); }
       
-      .ac-multi-interval-wrap { display:flex; align-items:center; gap:6px; }
+      .ac-multi-interval-wrap { display:flex; align-items:center; gap:4px; }
       #ac-multi-interval {
-        width: 65px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--border2);
-        background: var(--surface); color: var(--text); font-size: 13px; font-weight: 700; text-align: center;
+        width: 50px; padding: 4px 6px; border-radius: 8px; border: 1px solid var(--border2);
+        background: var(--surface); color: var(--text); font-size: 12px; font-weight: 700; text-align: center;
       }
       #ac-panel[data-theme="light"] #ac-multi-interval { background: #ffffff; }
-      .ac-multi-ms { font-size:12px; opacity:0.6; color: var(--text); }
+      .ac-multi-ms { font-size:10px; opacity:0.7; color: var(--text); }
       
       .ac-multi-remove {
-        width: 30px; height: 30px; border-radius:8px; border:1px solid rgba(239,68,68,0.4);
-        background:rgba(239,68,68,0.1); color:#ef4444; cursor:pointer; font-size:14px; font-weight:bold;
+        width: 22px; height: 22px; border-radius:8px; border:1px solid rgba(248,113,113,0.35);
+        background:rgba(248,113,113,0.08); color:#dc2626; cursor:pointer; font-size:11px; font-weight:bold;
         display:flex; align-items:center; justify-content:center; transition: all 0.2s;
       }
 
@@ -928,9 +971,9 @@
             <div style="font-weight:600; margin-bottom:12px; letter-spacing: 0.05em; color: var(--text);">
               Press combination to control clicking
             </div>
-            <div style="display:flex; justify-content:center; gap: 20px;">
-              <div>Start: <kbd>Alt</kbd> + <kbd>P</kbd></div>
-              <div>Stop: <kbd>Alt</kbd> + <kbd>E</kbd></div>
+            <div style="display:flex; justify-content:center; gap: 20px; flex-wrap: wrap;">
+              <div>Start: <kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> + <kbd>P</kbd></div>
+              <div>Stop: <kbd>Ctrl/Cmd</kbd> + <kbd>Shift</kbd> + <kbd>E</kbd></div>
             </div>
           </div>
 
@@ -984,6 +1027,14 @@
     });
 
     loadTheme((theme) => applyTheme(theme));
+
+    if (chrome.storage && chrome.storage.onChanged) {
+      chrome.storage.onChanged.addListener((changes, area) => {
+        if (area === "sync" && changes.acTheme && changes.acTheme.newValue) {
+          applyTheme(changes.acTheme.newValue);
+        }
+      });
+    }
 
     let dragStartX = 0, dragStartY = 0, panelStartX = 0, panelStartY = 0;
 
@@ -1058,7 +1109,7 @@
     const singleView = shadowRoot.getElementById("ac-single-view");
     const multiView = shadowRoot.getElementById("ac-multi-view");
     const posControl = shadowRoot.getElementById("ac-position-control");
-    const speedControl = shadowRoot.getElementById("ac-speed"); // ADD
+    const speedControl = shadowRoot.getElementById("ac-speed"); // PRIDANO
 
     if (panelMode === "single") {
       if (singleView) singleView.style.display = "block";
@@ -1088,17 +1139,22 @@
     document.body.appendChild(host);
   }
 
-  // KEYBOARD SHORTCUTS (Alt + P, Alt + E)
+  // KEYBOARD SHORTCUTS (Ctrl/Cmd + Shift + P, Ctrl/Cmd + Shift + E)
   document.addEventListener("keydown", (e) => {
     if (!panelActive || (document.activeElement && ["INPUT", "TEXTAREA"].includes(document.activeElement.tagName))) return;
     const key = e.key.toLowerCase();
-    if (e[modifierKey] && key === stopKey) {
-      if (isRunning) { e.preventDefault(); stopClicking(); }
-    } else if (e[modifierKey] && key === startKey) {
+    const modifier = (e.ctrlKey || e.metaKey) && e.shiftKey && !e.altKey;
+
+    if (modifier && key === "p") {
       if (!isRunning) {
         e.preventDefault();
         if (panelMode === "single") clickMode = "mouse";
         startClicking();
+      }
+    } else if (modifier && key === "e") {
+      if (isRunning) {
+        e.preventDefault();
+        stopClicking();
       }
     }
   });
