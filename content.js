@@ -296,8 +296,8 @@
 
   function addMultiTarget(x, y) {
     const defaultInterval = 200 + multiTargets.length * 100;
-    multiTargets.push({ x, y, interval: defaultInterval });
-    renderMultiTargets();
+    multiTargets.push({ x, y, interval: defaultInterval, repeat: true
+      renderMultiTargets();
     renderMultiMarkers();
   }
 
@@ -367,6 +367,18 @@
 
       intervalWrap.appendChild(intervalInput); intervalWrap.appendChild(msLabel);
 
+            const repeatWrap = document.createElement("div");
+            repeatWrap.className = "ac-multi-repeat-wrap";
+            const repeatCheckbox = document.createElement("input");
+            repeatCheckbox.type = "checkbox";
+            repeatCheckbox.checked = t.repeat !== false;
+            repeatCheckbox.addEventListener("change", () => { multiTargets[i].repeat = repeatCheckbox.checked; });
+            const repeatLabel = document.createElement("label");
+            repeatLabel.appendChild(repeatCheckbox);
+            const repeatText = document.createTextNode(" Opakovat");
+            repeatLabel.appendChild(repeatText);
+            repeatWrap.appendChild(repeatLabel);
+
       const removeButton = document.createElement("button");
       removeButton.type = "button";
       removeButton.innerHTML = `
@@ -379,7 +391,7 @@
 
       removeButton.addEventListener("click", () => { removeMultiTarget(i); });
 
-      row.appendChild(left); row.appendChild(intervalWrap); row.appendChild(removeButton);
+      row.appendChild(left); row.appendChild(repeatWrap); row.appendChild(intervalWrap); row.appendChild(removeButton);
       list.appendChild(row);
     });
   }
@@ -495,6 +507,12 @@
         clickCount++;
         if (countDisplay) countDisplay.textContent = clickCount;
       }
+
+            if (target.repeat === false) {
+                      multiTargets.splice(index, 1);
+                      renderMultiTargets();
+                      renderMultiMarkers();
+                    }
       
       const delay = target.interval > 0 ? target.interval : 200;
       multiIndex = (multiIndex + 1) % multiTargets.length;
